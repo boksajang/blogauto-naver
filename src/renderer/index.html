@@ -1,0 +1,367 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Naver Blog Automator</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="topbar">
+        <div>
+          <h1>Naver Blog Automator</h1>
+          <p id="runtimePath">런타임 폴더 확인 중</p>
+        </div>
+        <div class="agent-model-toolbar" aria-label="Agent model settings">
+          <label>
+            <span>Main Agent</span>
+            <select id="mainAgentModel">
+              <option value="low">낮음</option>
+              <option value="medium">중간</option>
+              <option value="high" selected>높음</option>
+              <option value="xhigh">매우높음</option>
+            </select>
+          </label>
+          <label>
+            <span>Research/Title</span>
+            <select id="researchAgentModel">
+              <option value="low">낮음</option>
+              <option value="medium">중간</option>
+              <option value="high" selected>높음</option>
+              <option value="xhigh">매우높음</option>
+            </select>
+          </label>
+          <label>
+            <span>Writer Agent</span>
+            <select id="writerAgentModel">
+              <option value="low">낮음</option>
+              <option value="medium">중간</option>
+              <option value="high" selected>높음</option>
+              <option value="xhigh">매우높음</option>
+            </select>
+          </label>
+          <label>
+            <span>Image Worker</span>
+            <select id="imageWorkerModel">
+              <option value="low">낮음</option>
+              <option value="medium" selected>중간</option>
+              <option value="high">높음</option>
+              <option value="xhigh">매우높음</option>
+            </select>
+          </label>
+        </div>
+        <div class="header-actions">
+          <span id="tokenBadge" class="badge token">누적 0 tokens</span>
+          <span id="codexPrimaryLimitBadge" class="badge limit unknown">5시간 잔량 -</span>
+          <span id="codexSecondaryLimitBadge" class="badge limit unknown">주간 잔량 -</span>
+          <span id="runState" class="badge info">대기</span>
+          <button id="openRuntimeButton" class="ghost" type="button">폴더 열기</button>
+        </div>
+      </header>
+
+      <div id="sessionNotice" class="session-notice" role="status" aria-live="polite" hidden>
+        <div>
+          <strong>계정별 로그인이 필요합니다.</strong>
+          <p id="sessionNoticeText">등록한 계정마다 세션 확인을 진행하고, 브라우저에서 로그인을 완료해 주세요.</p>
+        </div>
+        <button id="dismissSessionNoticeButton" class="ghost small" type="button">확인</button>
+      </div>
+
+      <div id="startupNotice" class="startup-notice" role="dialog" aria-modal="true" aria-labelledby="startupNoticeTitle" hidden>
+        <div class="startup-card">
+          <div>
+            <h2 id="startupNoticeTitle">처음 실행 안내</h2>
+            <p>네이버 로그인, 세션 확인, 블로그 발행은 Chrome이 설치되어 있어야 작동합니다. Chrome이 없으면 본문 생성은 가능하지만 발행 단계는 진행할 수 없습니다.</p>
+          </div>
+          <ul>
+            <li><strong>Naver ID</strong>는 로그인에 사용합니다.</li>
+            <li><strong>Blog ID</strong>는 블로그 주소에 사용합니다. 비워두면 Naver ID를 사용합니다.</li>
+            <li>자동 발행 전 계정관리에서 세션 확인을 먼저 완료하세요.</li>
+          </ul>
+          <button id="dismissStartupNoticeButton" class="primary" type="button">확인</button>
+        </div>
+      </div>
+
+      <main class="workspace">
+        <section class="panel input-panel" aria-label="작업 입력">
+          <div class="panel-head">
+            <h2>작업 입력</h2>
+            <span id="settingsState" class="hint">설정 파일 자동 저장</span>
+          </div>
+          <form id="jobForm" class="form-grid">
+            <div class="manager-block wide">
+              <div class="manager-head">
+                <strong>계정 관리</strong>
+                <button id="bulkSessionCheckButton" class="ghost small" type="button">세션일괄확인</button>
+                <button id="toggleAccountManagerButton" class="ghost small" type="button">펼치기</button>
+              </div>
+              <div id="accountManager" class="account-manager collapsed">
+                <label>
+                  <span>계정 표시명</span>
+                  <input id="accountLabel" placeholder="예: 메인 블로그" />
+                </label>
+                <label>
+                  <span>Naver ID</span>
+                  <input id="naverId" name="naverId" autocomplete="username" />
+                </label>
+                <label>
+                  <span>Blog ID</span>
+                  <input id="blogId" name="blogId" placeholder="비우면 Naver ID 사용" />
+                </label>
+                <label>
+                  <span>Password</span>
+                  <input id="naverPassword" name="naverPassword" type="password" autocomplete="current-password" />
+                </label>
+                <div class="account-sample-image">
+                  <div class="sample-image-preview" id="accountSampleImagePreview">
+                    <span>No sample image</span>
+                  </div>
+                  <div class="sample-image-meta">
+                    <strong>Image style sample</strong>
+                    <small id="accountImagePromptStatus">Default image style</small>
+                    <div class="button-row">
+                      <button id="chooseAccountSampleImageButton" class="ghost" type="button">Upload / change</button>
+                      <button id="deleteAccountSampleImageButton" class="ghost danger-button" type="button">Delete</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="button-row">
+                  <button id="addAccountButton" class="ghost" type="button">신규 추가</button>
+                  <button id="updateAccountButton" class="ghost" type="button">선택 계정 수정</button>
+                  <button id="clearAccountFormButton" class="ghost" type="button">신규 입력</button>
+                </div>
+              </div>
+              <div id="accountList" class="account-list"></div>
+            </div>
+
+            <div class="manager-block wide">
+              <div class="manager-head">
+                <strong>카테고리 관리</strong>
+                <button id="toggleCategoryManagerButton" class="ghost small" type="button">카테고리 관리</button>
+              </div>
+              <div id="categoryManager" class="category-manager">
+                <label>
+                  <span>카테고리 명</span>
+                  <input id="categoryName" placeholder="선택 계정에 추가할 카테고리" />
+                </label>
+                <label>
+                  <span>검색 키워드</span>
+                  <input id="categoryKeyword" placeholder="자동 발행 시 이 키워드로 최신 이슈 검색" />
+                </label>
+                <label class="wide">
+                  <span>제외할 주제</span>
+                  <input id="categoryExcludedTopics" placeholder="선택 입력, 쉼표로 구분" />
+                </label>
+                <label class="wide">
+                  <span>발행 목적</span>
+                  <textarea id="categoryPublishPurpose" class="category-purpose-input" rows="5" placeholder="비우면 자동 판단"></textarea>
+                </label>
+                <label>
+                  <span>선호 톤</span>
+                  <input id="categoryPreferredTone" placeholder="비우면 자동 판단" />
+                </label>
+                <label class="wide">
+                  <span>검색 최신성 수준</span>
+                  <select id="categoryFreshnessLevel">
+                    <option value="auto">자동 판단</option>
+                    <option value="low">낮음</option>
+                    <option value="medium">중간</option>
+                    <option value="high">높음</option>
+                  </select>
+                </label>
+                <label>
+                  <span>네이버 검색 탭</span>
+                  <select id="categorySearchChannel">
+                    <option value="blog">블로그</option>
+                    <option value="news">뉴스</option>
+                    <option value="web">웹</option>
+                  </select>
+                </label>
+                <label>
+                  <span>검색 Primary</span>
+                  <select id="categoryPrimarySearchProvider">
+                    <option value="naver">Naver</option>
+                    <option value="google">Google</option>
+                  </select>
+                </label>
+                <label>
+                  <span>검색 Fallback</span>
+                  <select id="categoryFallbackSearchProvider">
+                    <option value="google">Google</option>
+                    <option value="naver">Naver</option>
+                  </select>
+                </label>
+                <label class="compact-check">
+                  <input id="categoryTrustBlogAsSource" type="checkbox" />
+                  블로그를 신뢰 근거로 인정
+                </label>
+                <button id="addCategoryButton" class="ghost" type="button">카테고리 등록/수정</button>
+              </div>
+              <div id="categoryList" class="category-list"></div>
+            </div>
+
+            <div class="topic-mode-row wide">
+              <label>
+                <span>글 발행 방식</span>
+                <select id="topicMode">
+                  <option value="manual">수동</option>
+                  <option value="auto">자동</option>
+                </select>
+              </label>
+              <label class="compact-check body-break-option">
+                <input id="breakSentencesInBody" type="checkbox" checked />
+                본문 내 문장 줄바꿈
+              </label>
+            </div>
+            <label id="repeatTermLabel">
+              <span>반복주기 Term (분)</span>
+              <input id="repeatTermMinutes" type="number" min="1" step="1" value="60" />
+            </label>
+            <label id="manualTopicLabel" class="wide">
+              <span>주제</span>
+              <input id="topic" name="topic" />
+            </label>
+            <div class="check-row wide">
+              <label><input id="publishAfterGenerate" type="checkbox" /> 생성 후 Naver 발행까지 진행</label>
+            </div>
+            <div class="check-row wide">
+              <label><input id="publishToTistoryAfterNaver" type="checkbox" /> Naver 발행 성공 후 Tistory에도 발행</label>
+            </div>
+            <label class="wide">
+              <span>Tistory Blog ID</span>
+              <input id="tistoryBlogId" placeholder="예: myblog" />
+            </label>
+            <div class="inline-row wide">
+              <label>
+                <span>공개설정</span>
+                <select id="publishVisibility">
+                  <option value="public">전체공개</option>
+                  <option value="private">비공개</option>
+                </select>
+              </label>
+              <label>
+                <span>발행시간</span>
+                <select id="publishScheduleMode">
+                  <option value="now">현재</option>
+                  <option value="reserve">예약</option>
+                </select>
+              </label>
+              <label id="reserveAfterLabel">
+                <span>예약 +시간</span>
+                <input id="reserveAfterHours" type="number" min="1" step="1" value="3" />
+              </label>
+            </div>
+            <button id="saveSettingsButton" class="ghost wide" type="button">설정 저장</button>
+            <button id="tistoryTestButton" class="ghost wide" type="button">Tistory 테스트 발행</button>
+            <button id="startButton" class="primary wide" type="submit">작업 시작</button>
+            <button id="stopAutoButton" class="ghost wide" type="button" disabled>자동 중지</button>
+          </form>
+        </section>
+
+        <section class="panel preview-panel" aria-label="생성 본문">
+          <div class="panel-head">
+            <h2>생성된 본문</h2>
+            <span id="articleMeta" class="hint">아직 생성 전</span>
+          </div>
+          <div class="selected-title">
+            <span>선정 제목</span>
+            <strong id="selectedTitle">아직 선정 전</strong>
+          </div>
+          <textarea id="articlePreview" readonly placeholder="codex.cmd가 생성한 본문이 여기에 표시됩니다."></textarea>
+        </section>
+
+        <section class="panel main-log-panel" aria-label="Main Agent 로그">
+          <div class="panel-head">
+            <h2>Main Agent</h2>
+            <button id="clearLogButton" class="ghost small" type="button">지우기</button>
+          </div>
+          <div id="mainLogStream" class="log-stream"></div>
+        </section>
+
+        <section class="panel research-log-panel" aria-label="Research Title Agent 로그">
+          <div class="panel-head">
+            <h2>Research/Title Agent</h2>
+          </div>
+          <div id="researchLogStream" class="log-stream"></div>
+        </section>
+
+        <section class="panel writer-log-panel" aria-label="Writer Agent 로그">
+          <div class="panel-head">
+            <h2>Writer Agent</h2>
+          </div>
+          <div id="writerLogStream" class="log-stream"></div>
+        </section>
+
+        <section class="panel image-panel" aria-label="생성 이미지 미리보기">
+          <div class="panel-head">
+            <h2>이미지 미리보기</h2>
+            <div class="image-controls">
+              <label class="compact-select">
+                <span>이미지비율</span>
+                <select id="imageAspectRatio">
+                  <option value="16:9" selected>16:9</option>
+                  <option value="9:16">9:16</option>
+                  <option value="1:1">1:1</option>
+                </select>
+              </label>
+              <label class="compact-check"><input id="includeTitleImage" type="checkbox" checked /> 타이틀이미지생성</label>
+              <label class="compact-select">
+                <span>본문이미지최대</span>
+                <select id="maxBodyImages">
+                  <option value="0">0장</option>
+                  <option value="1">1장</option>
+                  <option value="2" selected>2장</option>
+                  <option value="3">3장</option>
+                  <option value="4">4장</option>
+                  <option value="5">5장</option>
+                  <option value="6">6장</option>
+                  <option value="7">7장</option>
+                  <option value="8">8장</option>
+                  <option value="9">9장</option>
+                  <option value="10">10장</option>
+                </select>
+              </label>
+            </div>
+          </div>
+          <div id="imageGrid" class="image-grid">
+            <div class="empty">생성된 이미지가 없습니다.</div>
+          </div>
+          <div id="imageNotes" class="image-notes"></div>
+        </section>
+
+        <section class="panel history-panel" aria-label="작업 이력">
+          <div class="panel-head">
+            <div>
+              <h2>작업 이력</h2>
+              <p class="hint">최근 작업 상태와 실패 원인을 빠르게 확인합니다.</p>
+            </div>
+            <div class="history-actions">
+              <button id="openHistoryModalButton" class="ghost small" type="button">작업 이력 보기</button>
+              <button id="reloadHistoryButton" class="ghost small" type="button">새로고침</button>
+            </div>
+          </div>
+          <div id="historySummary" class="history-summary"></div>
+        </section>
+      </main>
+    </div>
+    <div id="historyModal" class="modal-backdrop" hidden>
+      <section class="history-modal" role="dialog" aria-modal="true" aria-labelledby="historyModalTitle">
+        <div class="modal-head">
+          <div>
+            <h2 id="historyModalTitle">작업 이력</h2>
+            <p class="hint">최근 20건의 작업 결과와 상세 진단 정보를 확인합니다.</p>
+          </div>
+          <div class="history-actions">
+            <button id="reloadHistoryModalButton" class="ghost small" type="button">새로고침</button>
+            <button id="closeHistoryModalButton" class="ghost small" type="button">닫기</button>
+          </div>
+        </div>
+        <div class="history-modal-body">
+          <div id="historyBody"></div>
+        </div>
+      </section>
+    </div>
+    <script src="./app.js"></script>
+  </body>
+</html>

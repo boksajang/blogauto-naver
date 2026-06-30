@@ -1,0 +1,51 @@
+# Dependencies
+node_modules/
+
+# Runtime data and local user state
+runtime/
+dist/runtime/
+**/user-settings.json
+**/account-categories.json
+**/blog_history.jsonl
+**/account-assets/
+**/browser-profile/
+**/browser-profiles/
+
+# Environment and secrets
+.env
+.env.*
+*.env
+*.local
+!.env.example
+
+# Build artifacts
+dist/
+build/
+out/
+release/
+*.exe
+*.msi
+*.asar
+*.zip
+*.7z
+*.dmg
+*.pkg
+
+# Browser/cache/database files
+*.db
+*.db-journal
+*.sqlite
+*.sqlite3
+*.log
+
+# Local agent/app metadata
+.agents/
+.codex/
+.flovix/
+
+# OS/editor noise
+.DS_Store
+Thumbs.db
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
