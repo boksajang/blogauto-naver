@@ -599,6 +599,23 @@ function mergeCandidateLists(priorityItems, existingItems, limit = 20) {
   return uniqueCandidates([...(priorityItems || []), ...(existingItems || [])]).slice(0, limit);
 }
 
+function isAuthorityCandidate(item) {
+  return isOfficialDomain(item?.url) || isInstitutionalDomain(item?.url);
+}
+
+function isPrioritySourceCandidate(item, profile) {
+  if (!profile?.strictEvidence) return false;
+  if (isAuthorityCandidate(item)) return true;
+  return profile.independentEvidence === true && isIndependentEditorialSource(item?.url);
+}
+
+function buildCandidateFetchList(items, profile, limit = 20) {
+  const unique = uniqueCandidates(items);
+  if (!profile?.strictEvidence) return unique.slice(0, limit);
+  const priority = unique.filter((item) => isPrioritySourceCandidate(item, profile));
+  return mergeCandidateLists(priority, unique, limit);
+}
+
 function normalizeSearchChannel(value) {
   return ["blog", "news", "web"].includes(String(value || "").toLowerCase())
     ? String(value).toLowerCase()
@@ -689,6 +706,9 @@ function isStrongCandidate(item, profile) {
 function selectAuthorityClues(items, options) {
   const text = [
     options.topic,
+    options.keyword,
+    options.publishPurpose,
+    options.researchGuidance,
     normalizeSearchQueries(options.searchQueries).join(" "),
     ...items.slice(0, 5).flatMap((item) => [item?.title, item?.excerpt])
   ].filter(Boolean).join(" ");
@@ -703,12 +723,59 @@ function selectAuthorityClues(items, options) {
     .join(" ");
 }
 
+function selectEvidenceSearchTerms(options, items = []) {
+  const text = [
+    options.topic,
+    options.keyword,
+    options.category,
+    options.publishPurpose,
+    options.researchGuidance,
+    normalizeSearchQueries(options.searchQueries).join(" "),
+    ...items.slice(0, 5).flatMap((item) => [item?.title, item?.excerpt])
+  ].filter(Boolean).join(" ");
+  const groups = [
+    {
+      pattern: /(신청|접수|모집|채용|지원금|지원\s*대상|지원\s*조건|정책\s*자금|대출|보조금|자격|마감|공고)/i,
+      terms: ["공식 공고", "신청 조건", "대상 자격", "접수 기간"]
+    },
+    {
+      pattern: /(공시|계약|수주|공급계약|IR|investor|투자자|실적|잠정실적|매출|영업이익|배당|자사주)/i,
+      terms: ["공시", "IR", "투자자 자료", "계약 원문"]
+    },
+    {
+      pattern: /(보고서|전망|지표|지수|통계|데이터|등급|신용평가|산업\s*전망|수주잔고|선가|시장\s*자료)/i,
+      terms: ["보고서", "지표", "통계", "원문", "PDF"]
+    },
+    {
+      pattern: /(발표|출시|공개|업데이트|로드맵|제품|모델|기술|launch|release|announcement|unveil)/i,
+      terms: ["공식 발표", "뉴스룸", "자료", "원문"]
+    },
+    {
+      pattern: /(법령|법률|규제|세금|세무|의료|보험|허가|인증)/i,
+      terms: ["법령", "고시", "기관 원문", "PDF"]
+    }
+  ];
+  const terms = [];
+  for (const group of groups) {
+    if (group.pattern.test(text)) {
+      terms.push(...group.terms);
+    }
+  }
+  if (/PDF|원문|공식|기관|자료/i.test(text)) {
+    terms.push("공식 자료", "원문", "PDF");
+  }
+  return uniqueStrings(terms.length ? terms : ["공식 자료", "원문", "보고서", "PDF"])
+    .slice(0, 8)
+    .join(" ");
+}
+
 function focusedOfficialSearchSuffix(options, profile, items = []) {
   if (!profile.strictEvidence) return "";
   const phrases = profile.keywordPhrases.slice(0, 4).join(" ");
   const topic = String(options.topic || "").replace(/\s+/g, " ").trim().slice(0, 90);
   const clues = selectAuthorityClues(items, options);
-  return [clues, topic, phrases, "공식 공고 신청기간 대상 자격 PDF 원문"]
+  const evidenceTerms = selectEvidenceSearchTerms(options, items);
+  return [clues, topic, phrases, evidenceTerms]
     .filter(Boolean)
     .join(" ")
     .slice(0, 220);
@@ -819,7 +886,7 @@ async function collectSearchResults(options, log = () => {}) {
 
   const buildFilteredCandidates = (items) => {
     const seen = new Set();
-    return items
+    const filtered = items
       .filter((item) => {
         const key = item.url.replace(/[#?].*$/, "");
         if (seen.has(key)) return false;
@@ -827,8 +894,8 @@ async function collectSearchResults(options, log = () => {}) {
         return true;
       })
       .filter((item) => !isLowValueResult(item.title, item.url))
-      .filter((item) => candidateMatchesSearchIntent(item, options))
-      .slice(0, 20);
+      .filter((item) => candidateMatchesSearchIntent(item, options));
+    return buildCandidateFetchList(filtered, profile, 20);
   };
   let candidates = buildFilteredCandidates(all);
 
@@ -860,17 +927,22 @@ async function collectSearchResults(options, log = () => {}) {
     const withContent = validEnriched.filter((item) => String(item.excerpt || "").trim().length >= 80);
     if (!withContent.length) return { selected: [], withContent: [] };
     const commonTokens = selectCommonTokens(withContent, options);
-    const scored = withContent
-    .map((item) => {
+    const scoredAll = withContent.map((item) => {
       const relevance = scoreCandidate(item, commonTokens, options, profile);
       return { ...item, relevance };
-    })
-    .filter((item) => {
+    });
+    const eligible = scoredAll.filter((item) => {
       const hasTopicTokens = tokenize(options.topic || "").length > 0;
-      return item.relevance.score >= 3 && (!hasTopicTokens || item.relevance.topicMatchedTerms.length > 0);
-    })
-    .sort((a, b) => b.relevance.score - a.relevance.score)
-    .slice(0, MAX_SELECTED_CONTENT_RESULTS);
+      const hasTopicMatch = Array.isArray(item.relevance.topicMatchedTerms) && item.relevance.topicMatchedTerms.length > 0;
+      const hasKeywordMatch = Array.isArray(item.relevance.keywordMatchedTerms) && item.relevance.keywordMatchedTerms.length > 0;
+      const priorityEvidence = isPrioritySourceCandidate(item, profile) && (hasTopicMatch || hasKeywordMatch);
+      return item.relevance.score >= 3 && ((!hasTopicTokens || hasTopicMatch) || priorityEvidence);
+    });
+    const sorted = eligible.sort((a, b) => b.relevance.score - a.relevance.score);
+    const priorityEvidence = sorted.filter((item) => isPrioritySourceCandidate(item, profile));
+    const scored = profile.strictEvidence
+      ? mergeCandidateLists(priorityEvidence, sorted, MAX_SELECTED_CONTENT_RESULTS)
+      : sorted.slice(0, MAX_SELECTED_CONTENT_RESULTS);
 
     return { selected: scored, withContent };
   };
@@ -1041,8 +1113,10 @@ module.exports = {
     requiresIndependentSourceEvidence,
     isIndependentEditorialSource,
     selectAuthorityClues,
+    selectEvidenceSearchTerms,
     extractAuthorityLinks,
     mergeCandidateLists,
+    buildCandidateFetchList,
     candidateMatchesSearchIntent,
     isStrongCandidate,
     hasDirectRelevance,

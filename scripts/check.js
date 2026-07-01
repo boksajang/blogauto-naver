@@ -639,11 +639,70 @@ assertCondition(
     && prioritizedMerge[0]?.url.includes("ols.semas.or.kr"),
   "src/lib/search.js: official follow-up candidates must not be truncated behind the first 20 blog results"
 );
+const strictAuthorityProfile = searchPrivate.buildSearchProfile?.({
+  searchNeed: "strict",
+  topic: "정책자금 공식 공고",
+  keyword: "소상공인 정책자금 신청"
+});
+const officialAfterTwenty = searchPrivate.buildCandidateFetchList?.(
+  [
+    ...existingTwenty,
+    { title: "official late result", url: "https://ols.semas.or.kr/ols/man/SMAN010M/page.do" }
+  ],
+  strictAuthorityProfile,
+  20
+);
+assertCondition(
+  Array.isArray(officialAfterTwenty)
+    && officialAfterTwenty.length === 20
+    && officialAfterTwenty[0]?.url.includes("ols.semas.or.kr")
+    && officialAfterTwenty.some((item) => String(item?.url || "").includes("ols.semas.or.kr")),
+  "src/lib/search.js: strict source collection must preserve official/institutional candidates even when they appear after the first 20 raw results"
+);
+const nonStrictFetchList = searchPrivate.buildCandidateFetchList?.(
+  [
+    ...existingTwenty,
+    { title: "official late result", url: "https://ols.semas.or.kr/ols/man/SMAN010M/page.do" }
+  ],
+  { strictEvidence: false },
+  20
+);
+assertCondition(
+  Array.isArray(nonStrictFetchList)
+    && nonStrictFetchList.length === 20
+    && nonStrictFetchList[0]?.url.includes("/sample/0")
+    && !nonStrictFetchList.some((item) => String(item?.url || "").includes("ols.semas.or.kr")),
+  "src/lib/search.js: non-strict source collection should keep the existing first-20 behavior"
+);
 assertCondition(
   sourceFiles.search.content.includes("블로그 본문에서 직접 공식 링크를 찾지 못해 기관명/사업명 단서로 공식사이트를 재검색합니다.")
     && sourceFiles.search.content.includes("authorityRefined")
+    && sourceFiles.search.content.includes("buildCandidateFetchList")
     && sourceFiles.search.content.includes("공식사이트 보강 검색을 실행합니다."),
   "src/lib/search.js: missing official links in blogs must trigger official-site re-search and prioritized crawling"
+);
+const industryEvidenceTerms = searchPrivate.selectEvidenceSearchTerms?.({
+  searchNeed: "strict",
+  topic: "한화오션 2조원대 수주 뒤 조선업 호황은 선가와 LNG 발주로 이어질까",
+  keyword: "조선업 수주 전망",
+  researchGuidance: "공식 공시 IR 자료 클락슨 신조선가지수 신용평가 보고서 원문 확인",
+  searchQueries: ["한화오션 LNG 운반선 VLCC 수주 공시", "Clarksons 신조선가지수 조선업 전망 보고서"]
+});
+assertCondition(
+  typeof industryEvidenceTerms === "string"
+    && industryEvidenceTerms.includes("공시")
+    && industryEvidenceTerms.includes("IR")
+    && industryEvidenceTerms.includes("보고서")
+    && industryEvidenceTerms.includes("지표")
+    && !industryEvidenceTerms.includes("신청 조건"),
+  "src/lib/search.js: official re-search suffix must adapt to evidence type instead of using application/notice wording for industry topics"
+);
+assertCondition(
+  sourceFiles.main.content.includes("function collectAuthorityEvidenceTerms")
+    && sourceFiles.main.content.includes("function collectAuthoritySubjectPhrases")
+    && !sourceFiles.main.content.includes("`${selectedTopic} 공식 공고`")
+    && !sourceFiles.main.content.includes("`${selectedTopic} 모집 채용 공고`"),
+  "src/main.js: authority recheck queries must be built from Research evidence type and subject phrases, not fixed notice/application templates"
 );
 const irrelevantSummary = searchLib.summarizeSourceQuality?.([{
   title: "feedback",

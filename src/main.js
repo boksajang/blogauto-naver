@@ -608,6 +608,100 @@ function buildResearchIntentGuidance(researchResult, context = {}) {
   ].filter(Boolean).join(" ");
 }
 
+function authorityEvidenceText(researchResult, searchTopic = "", sourceQuality = null) {
+  return flattenSearchIntentParts([
+    searchTopic,
+    sourceQuality?.reason,
+    researchResult?.finalTitle,
+    researchResult?.selectedTitle,
+    researchResult?.topicThesis,
+    researchResult?.topicLane,
+    researchResult?.selectedKeywordPhrases,
+    researchResult?.searchQueries,
+    researchResult?.failureReason,
+    researchResult?.searchFlowSummary,
+    researchResult?.writerBrief,
+    researchResult?.coreQuestions,
+    researchResult?.mustCover,
+    researchResult?.uncertainItems,
+    researchResult?.notes,
+    researchResult?.writerContract?.sourceBoundaries,
+    researchResult?.writerContract?.mustAnswer,
+    researchResult?.writerContract?.mustCover,
+    researchResult?.writerContract?.uncertainItems
+  ]).join(" ");
+}
+
+function collectAuthorityEvidenceTerms(researchResult, searchTopic = "", sourceQuality = null, limit = 8) {
+  const text = authorityEvidenceText(researchResult, searchTopic, sourceQuality);
+  const groups = [
+    {
+      pattern: /(신청|접수|모집|채용|지원금|지원\s*대상|지원\s*조건|정책\s*자금|대출|보조금|자격|마감|공고)/i,
+      terms: ["공식 공고", "신청 조건", "대상 자격", "접수 기간"]
+    },
+    {
+      pattern: /(공시|계약|수주|공급계약|IR|investor|투자자|실적|잠정실적|매출|영업이익|배당|자사주)/i,
+      terms: ["공시", "IR", "투자자 자료", "계약 원문"]
+    },
+    {
+      pattern: /(보고서|전망|지표|지수|통계|데이터|등급|신용평가|산업\s*전망|수주잔고|선가|시장\s*자료)/i,
+      terms: ["보고서", "지표", "통계", "원문", "PDF"]
+    },
+    {
+      pattern: /(발표|출시|공개|업데이트|로드맵|제품|모델|기술|launch|release|announcement|unveil)/i,
+      terms: ["공식 발표", "뉴스룸", "자료", "원문"]
+    },
+    {
+      pattern: /(법령|법률|규제|세금|세무|의료|보험|허가|인증)/i,
+      terms: ["법령", "고시", "기관 원문", "PDF"]
+    }
+  ];
+  const terms = [];
+  for (const group of groups) {
+    if (group.pattern.test(text)) {
+      terms.push(...group.terms);
+    }
+  }
+  if (/PDF|원문|공식|기관|자료/i.test(text)) {
+    terms.push("공식 자료", "원문", "PDF");
+  }
+  return uniqueSearchQueries(terms.length ? terms : ["공식 자료", "원문", "보고서", "PDF"], limit);
+}
+
+function collectAuthoritySubjectPhrases(researchResult, searchTopic = "", limit = 5) {
+  const rawParts = flattenSearchIntentParts([
+    researchResult?.finalTitle,
+    researchResult?.selectedTitle,
+    researchResult?.topicLane,
+    researchResult?.selectedKeywordPhrases,
+    researchResult?.searchQueries,
+    searchTopic,
+    researchResult?.topicThesis,
+    researchResult?.coreQuestions,
+    researchResult?.uncertainItems,
+    researchResult?.writerContract?.uncertainItems
+  ]);
+  const seen = new Set();
+  const phrases = [];
+  for (const part of rawParts) {
+    const chunks = String(part || "").split(/[,\n\r;|/?]+|(?:\s+-\s+)|(?:\.\s+)/);
+    for (const chunk of chunks) {
+      let phrase = cleanSearchIntentPhrase(chunk)
+        .replace(/^(최신|정확한|현재|공식|기관|원문|다음|확인|필요|여부)\s+/g, "")
+        .replace(/\s+(무엇인가|무엇인지|어떤가|확인해야 합니다|확인 필요)$/g, "")
+        .trim();
+      if (phrase.length < 3 || phrase.length > 80) continue;
+      if (/^(공식|기관|원문|보고서|자료|PDF|확인|필요)$/i.test(phrase)) continue;
+      const key = phrase.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      phrases.push(phrase);
+      if (phrases.length >= limit) return phrases;
+    }
+  }
+  return phrases;
+}
+
 function needsAuthorityRecheckQueries(researchResult, sourceQuality = null) {
   if (sourceQuality?.authorityEvidenceRequired === true && Number(sourceQuality?.authorityEvidenceCandidates || 0) === 0) return true;
   const text = [
@@ -624,20 +718,17 @@ function needsAuthorityRecheckQueries(researchResult, sourceQuality = null) {
 
 function buildAuthorityRecheckQueries(researchResult, searchTopic, sourceQuality = null) {
   if (!needsAuthorityRecheckQueries(researchResult, sourceQuality)) return [];
-  const selectedTopic = String(
-    researchResult?.finalTitle
-    || researchResult?.selectedTitle
-    || researchResult?.topicThesis
-    || searchTopic
-    || ""
-  ).replace(/\s+/g, " ").trim();
-  if (!selectedTopic) return [];
-  return uniqueSearchQueries([
-    `${selectedTopic} 공식 공고`,
-    `${selectedTopic} 신청 조건 지원 대상`,
-    `${selectedTopic} 접수 기간 마감`,
-    `${selectedTopic} 모집 채용 공고`
-  ], 4);
+  const subjects = collectAuthoritySubjectPhrases(researchResult, searchTopic, 5);
+  const evidenceTerms = collectAuthorityEvidenceTerms(researchResult, searchTopic, sourceQuality, 8);
+  if (!subjects.length || !evidenceTerms.length) return [];
+  const evidenceBundle = evidenceTerms.slice(0, 4).join(" ");
+  const secondaryBundle = evidenceTerms.slice(2, 6).join(" ") || evidenceBundle;
+  const candidates = [
+    `${subjects[0]} ${evidenceBundle}`,
+    subjects[1] ? `${subjects[1]} ${secondaryBundle}` : "",
+    subjects[2] ? `${subjects[2]} ${evidenceTerms.slice(0, 3).join(" ")}` : ""
+  ];
+  return uniqueSearchQueries(candidates, 3);
 }
 
 function detectCodexSourceFailure(result) {
