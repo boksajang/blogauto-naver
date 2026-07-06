@@ -141,7 +141,8 @@ async function main() {
     searchResults: [],
     currentDateLabel,
     includeTitleImage: settings.includeTitleImage !== false,
-    imageAspectRatio: normalizeImageAspectRatio(settings.imageAspectRatio),
+    titleImageAspectRatio: normalizeImageAspectRatio(settings.titleImageAspectRatio || settings.imageAspectRatio),
+    bodyImageAspectRatio: normalizeImageAspectRatio(settings.bodyImageAspectRatio || settings.imageAspectRatio),
     maxBodyImages: Number.isFinite(Number(settings.maxBodyImages)) ? Number(settings.maxBodyImages) : 2,
     sourceQuality: { status: "not_requested" },
     historyTitles: titleHistory.map((item) => item.title),
@@ -165,9 +166,17 @@ async function main() {
         primaryProvider: settings.primarySearchProvider || "naver",
         fallbackProvider: settings.fallbackSearchProvider || "google",
         naverSearchUrl: settings.naverSearchUrl,
-        googleSearchUrl: settings.googleSearchUrl
+        googleSearchUrl: settings.googleSearchUrl,
+        freshnessLevel: settings.freshnessLevel || "auto",
+        currentDate: currentDateLabel
       }, log);
-      const sourceQuality = summarizeSourceQuality(searchResults, settings.topicMode || "manual");
+      const sourceQuality = summarizeSourceQuality(searchResults, settings.topicMode || "manual", {
+        topic: searchTopic,
+        keyword: keyword || category,
+        searchNeed: researchResult.searchNeed || "",
+        freshnessLevel: settings.freshnessLevel || "auto",
+        currentDate: currentDateLabel
+      });
       if (sourceQuality.status === "insufficient") {
         log(sourceQuality.reason, "warn");
       }

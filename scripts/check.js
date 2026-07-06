@@ -227,28 +227,37 @@ assertCondition(
   "src/renderer/app.js: renderer default Naver search URL must use the blog tab"
 );
 assertCondition(
-  sourceFiles.settings.content.includes("imageAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO")
+  sourceFiles.settings.content.includes("titleImageAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO")
+    && sourceFiles.settings.content.includes("bodyImageAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO")
     && sourceFiles.settings.content.includes("function normalizeImageAspectRatio")
-    && sourceFiles.settings.content.includes("normalized.imageAspectRatio = normalizeImageAspectRatio(normalized.imageAspectRatio)"),
-  "src/lib/settings.js: image aspect ratio must default to 16:9 and be normalized"
+    && sourceFiles.settings.content.includes("hasOwnProperty.call(parsed, \"titleImageAspectRatio\")")
+    && sourceFiles.settings.content.includes("hasOwnProperty.call(parsed, \"bodyImageAspectRatio\")")
+    && sourceFiles.settings.content.includes("normalized.titleImageAspectRatio = normalizeImageAspectRatio(normalized.titleImageAspectRatio || normalized.imageAspectRatio)")
+    && sourceFiles.settings.content.includes("normalized.bodyImageAspectRatio = normalizeImageAspectRatio(normalized.bodyImageAspectRatio || normalized.imageAspectRatio)"),
+  "src/lib/settings.js: title/body image aspect ratios must default to 16:9 and be normalized with legacy fallback"
 );
 assertCondition(
-  sourceFiles.rendererIndex.content.includes("id=\"imageAspectRatio\"")
+  sourceFiles.rendererIndex.content.includes("id=\"titleImageAspectRatio\"")
+    && sourceFiles.rendererIndex.content.includes("id=\"bodyImageAspectRatio\"")
     && sourceFiles.rendererIndex.content.includes("value=\"16:9\"")
     && sourceFiles.rendererIndex.content.includes("value=\"9:16\"")
     && sourceFiles.rendererIndex.content.includes("value=\"1:1\""),
-  "src/renderer/index.html: image preview controls must expose 16:9, 9:16, and 1:1 aspect ratio options"
+  "src/renderer/index.html: title/body image preview controls must expose 16:9, 9:16, and 1:1 aspect ratio options"
 );
 assertCondition(
-  sourceFiles.rendererApp.content.includes("imageAspectRatio: normalizeImageAspectRatio($(\"#imageAspectRatio\").value)")
-    && sourceFiles.rendererApp.content.includes("imageAspectRatio: form.imageAspectRatio")
-    && sourceFiles.rendererApp.content.includes("$(\"#imageAspectRatio\").addEventListener(\"change\""),
-  "src/renderer/app.js: image aspect ratio must be collected, saved, and persisted immediately on change"
+  sourceFiles.rendererApp.content.includes("titleImageAspectRatio: normalizeImageAspectRatio($(\"#titleImageAspectRatio\").value)")
+    && sourceFiles.rendererApp.content.includes("bodyImageAspectRatio: normalizeImageAspectRatio($(\"#bodyImageAspectRatio\").value)")
+    && sourceFiles.rendererApp.content.includes("titleImageAspectRatio: form.titleImageAspectRatio")
+    && sourceFiles.rendererApp.content.includes("bodyImageAspectRatio: form.bodyImageAspectRatio")
+    && sourceFiles.rendererApp.content.includes("[\"#titleImageAspectRatio\", \"#bodyImageAspectRatio\"]"),
+  "src/renderer/app.js: title/body image aspect ratios must be collected, saved, and persisted immediately on change"
 );
 assertCondition(
-  sourceFiles.main.content.includes("const imageAspectRatio = normalizeImageAspectRatio(form.imageAspectRatio || settings.imageAspectRatio)")
-    && sourceFiles.main.content.includes("imageAspectRatio,"),
-  "src/main.js: image aspect ratio must flow from the form into saved settings and generation options"
+  sourceFiles.main.content.includes("const titleImageAspectRatio = normalizeImageAspectRatio(form.titleImageAspectRatio || settings.titleImageAspectRatio || form.imageAspectRatio || settings.imageAspectRatio)")
+    && sourceFiles.main.content.includes("const bodyImageAspectRatio = normalizeImageAspectRatio(form.bodyImageAspectRatio || settings.bodyImageAspectRatio || form.imageAspectRatio || settings.imageAspectRatio)")
+    && sourceFiles.main.content.includes("titleImageAspectRatio,")
+    && sourceFiles.main.content.includes("bodyImageAspectRatio,"),
+  "src/main.js: title/body image aspect ratios must flow from the form into saved settings and generation options"
 );
 assertCondition(
   sourceFiles.search.content.includes(naverBlogSearchFallback),
@@ -1395,6 +1404,22 @@ if (!sourceFiles.codexRunner.content.includes("function readerValueChecklistForC
   failed = true;
   console.error("src/lib/codexRunner.js: Writer Contract must include a reusable reader-value checklist");
 }
+if (
+  !sourceFiles.codexRunner.content.includes("function buildWriterContractRefinementPrompt")
+  || !sourceFiles.codexRunner.content.includes("safetyBoundaries")
+  || !sourceFiles.codexRunner.content.includes("Do not use token overlap, wording similarity, or phrase matching")
+  || !sourceFiles.codexRunner.content.includes("writerContractRefined")
+) {
+  failed = true;
+  console.error("src/lib/codexRunner.js: Writer Contract must be semantically refined by an agent before writing");
+}
+if (
+  mainReviewPrompt
+  && !mainReviewPrompt.content.includes("speaks about its own writing choices, coverage limits, or validation posture")
+) {
+  failed = true;
+  console.error("src/lib/codexRunner.js: Main Agent review must reject article-self/meta-writing viewpoint");
+}
 if (!sourceFiles.codexRunner.content.includes("context.preferredTone,\n      researchResult?.writerContract?.tone")) {
   failed = true;
   console.error("src/lib/codexRunner.js: buildWriterContract must prefer user preferredTone over Research/Title tone");
@@ -1436,9 +1461,13 @@ if (imageWorkerPrompt && !imageWorkerPrompt.content.includes("Body image policy:
   failed = true;
   console.error("src/lib/codexRunner.js: Image Worker prompt must keep a separate body image policy");
 }
-if (imageWorkerPrompt && !imageWorkerPrompt.content.includes("Requested image aspect ratio")) {
+if (imageWorkerPrompt && (
+  !imageWorkerPrompt.content.includes("Requested title image aspect ratio")
+  || !imageWorkerPrompt.content.includes("Requested body image aspect ratio")
+  || !imageWorkerPrompt.content.includes("Generate title images in the requested title image aspect ratio and body images in the requested body image aspect ratio")
+)) {
   failed = true;
-  console.error("src/lib/codexRunner.js: Image Worker prompt must instruct generation with the selected aspect ratio");
+  console.error("src/lib/codexRunner.js: Image Worker prompt must instruct generation with separate selected title/body aspect ratios");
 }
 if (sourceFiles.imageAssets.content.includes("function createFallbackTitleImage")) {
   failed = true;

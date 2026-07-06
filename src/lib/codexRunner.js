@@ -721,6 +721,7 @@ function buildPrompt({
     researchTitleResult ? "- Use the Writer Contract above as the writing boundary. If it is insufficient, return status \"failed\" instead of inventing facts." : "",
     "- Editorial priority order: Writer Contract > Research/Title finalTitle and topicThesis > confirmed facts/source boundaries > Category publishing direction > Optional keyword.",
     "- Treat uncertainty, source boundaries, and source limitations as guardrails. They are not article material by themselves.",
+    "- Treat Writer Contract safetyBoundaries as internal publishing limits. Convert them into supported reader decisions only when the sources provide useful action; otherwise fail instead of describing the article's own limits.",
     "- Before writing, map the selected title to reader questions. A successful post must answer those questions with supported information, not fill sections with reminders that information is uncertain.",
     "- Every section must move the reader forward with at least one concrete value item: a confirmed fact, a practical step, a decision criterion, a comparison, a consequence, or a next-check path supported by the handoff.",
     "- If you can only write broad cautions, repeated verification advice, or a vague overview that does not answer the selected title, return status \"failed\" instead of padding the article.",
@@ -784,6 +785,7 @@ function buildPrompt({
     "- Default human Naver Blog voice: sound like a real person organizing the issue for a reader. Use a warm but not chatty lead, mix sentence lengths, include reader-facing transitions such as what this means, why readers search for it, what to check before acting, and avoid stiff summary-report cadence.",
     "- Unless Preferred tone explicitly asks otherwise, the opening should start from the reader's situation or curiosity before moving into facts. Do not fake personal experience, visits, purchases, or emotions that were not provided.",
     "- The article body must never narrate the agent's research process, source collection process, or verification workflow.",
+    "- The article body must speak directly to the reader about the selected subject, not about the article's own coverage choices, writing limits, or internal validation decisions.",
     "- Category publishing direction is internal guidance. Do not copy it into the article body, do not justify the category, and do not open with a defensive contrast such as 'this is not a general guide/advice'.",
     "- The first section must answer the title from the reader's point of view: what the topic is, who should care, why it matters, and what the reader should understand or check next.",
     "- When the topic uses an older anchorEvent as a current issue, the first section must bridge it to the currentPeg: current status, recent procedure, new ruling/order, settlement/dismissal, policy change, official position shift, or another source-backed reason it matters now.",
@@ -917,7 +919,8 @@ function buildResearchTitlePrompt({
     "- For AI/technology launch, release, announcement, model, product, chip, roadmap, market, or earnings topics, Naver blog candidates are discovery clues unless official/institutional or independent editorial candidates also support the core fact.",
     "- Return BLOCK when facts are insufficient, sources conflict, the direct topic cannot be preserved, or a publishable title cannot be supported.",
     "- Do not copy source titles. Extract search flow, reader interest, repeated angles, and gaps.",
-    "- Include writerContract as the compact Writer handoff. It must define the reader-facing article mission, selected title, topic thesis, reader promise, first section focus, required answers, coverage boundaries, confirmed facts, uncertainty, source boundaries, current bridge requirements, and must-not-do items.",
+    "- Include writerContract as the compact Writer handoff. It must define the reader-facing article mission, selected title, topic thesis, reader promise, first section focus, required answers, reader coverage items, confirmed facts, safety boundaries, source boundaries, current bridge requirements, and must-not-do items.",
+    "- In writerContract, keep article fields for reader value only. Put limitations, unsupported variables, source gaps, and publishing constraints into safetyBoundaries, uncertainItems, sourceBoundaries, or mustNotDo instead of turning them into coverage or section structure.",
     "- writerContract must not narrate the search process, source collection process, or verification workflow. Put process detail in searchFlowSummary or notes, not in the Writer handoff.",
     "",
     researchRevisionContext ? "Revision context from previous agent step:" : "",
@@ -939,7 +942,7 @@ function buildResearchTitlePrompt({
     "",
     "Required output:",
     "- Write a UTF-8 JSON file at the exact Output JSON path.",
-    "- JSON shape: { \"status\": \"PASS\" | \"REVISION\" | \"BLOCK\", \"failureReason\": string, \"finalTitle\": string, \"topicThesis\": string, \"topicLane\": string, \"selectedKeywordIndexes\": number[], \"selectedKeywordPhrases\": string[], \"searchQueries\": string[], \"anchorEvent\": {\"name\": string, \"date\": string, \"summary\": string}, \"currentPeg\": {\"date\": string, \"summary\": string, \"sourceIds\": string[]}, \"currentBridgeRequired\": boolean, \"currentBridgeSatisfied\": boolean, \"directTopicPreserved\": boolean, \"factBased\": boolean, \"searchNeed\": \"skip\" | \"light\" | \"normal\" | \"strict\", \"searchFlowSummary\": string, \"repeatedTopics\": string[], \"competitionGaps\": string[], \"coreQuestions\": string[], \"mustCover\": string[], \"avoidDirections\": string[], \"confirmedFacts\": string[], \"uncertainItems\": string[], \"usableSources\": [{\"sourceId\": string, \"title\": string, \"url\": string, \"reason\": string}], \"titleCandidates\": [{\"title\": string, \"reason\": string, \"risk\": string}], \"writerBrief\": string, \"writerContract\": { \"articleMission\": string, \"selectedTitle\": string, \"topicThesis\": string, \"targetReader\": string, \"readerPromise\": string, \"firstSectionFocus\": string, \"mustAnswer\": string[], \"mustCover\": string[], \"mustNotDo\": string[], \"confirmedFacts\": string[], \"uncertainItems\": string[], \"sourceBoundaries\": string[], \"recommendedStructure\": string[], \"currentBridgeRequired\": boolean, \"currentBridgeSatisfied\": boolean, \"anchorEvent\": object, \"currentPeg\": object, \"tone\": string }, \"notes\": string[] }.",
+    "- JSON shape: { \"status\": \"PASS\" | \"REVISION\" | \"BLOCK\", \"failureReason\": string, \"finalTitle\": string, \"topicThesis\": string, \"topicLane\": string, \"selectedKeywordIndexes\": number[], \"selectedKeywordPhrases\": string[], \"searchQueries\": string[], \"anchorEvent\": {\"name\": string, \"date\": string, \"summary\": string}, \"currentPeg\": {\"date\": string, \"summary\": string, \"sourceIds\": string[]}, \"currentBridgeRequired\": boolean, \"currentBridgeSatisfied\": boolean, \"directTopicPreserved\": boolean, \"factBased\": boolean, \"searchNeed\": \"skip\" | \"light\" | \"normal\" | \"strict\", \"searchFlowSummary\": string, \"repeatedTopics\": string[], \"competitionGaps\": string[], \"coreQuestions\": string[], \"mustCover\": string[], \"avoidDirections\": string[], \"confirmedFacts\": string[], \"uncertainItems\": string[], \"usableSources\": [{\"sourceId\": string, \"title\": string, \"url\": string, \"reason\": string}], \"titleCandidates\": [{\"title\": string, \"reason\": string, \"risk\": string}], \"writerBrief\": string, \"writerContract\": { \"articleMission\": string, \"selectedTitle\": string, \"topicThesis\": string, \"targetReader\": string, \"readerPromise\": string, \"firstSectionFocus\": string, \"mustAnswer\": string[], \"mustCover\": string[], \"mustNotDo\": string[], \"confirmedFacts\": string[], \"uncertainItems\": string[], \"sourceBoundaries\": string[], \"safetyBoundaries\": string[], \"recommendedStructure\": string[], \"currentBridgeRequired\": boolean, \"currentBridgeSatisfied\": boolean, \"anchorEvent\": object, \"currentPeg\": object, \"tone\": string }, \"notes\": string[] }.",
     "- topicLane, selectedKeywordIndexes, selectedKeywordPhrases, and searchQueries are required in auto topic mode. searchQueries must be narrow and must not contain the full Category keyword pool.",
     "- For REVISION, searchQueries must carry the next-step research intent from the missing facts. Do not leave the app with only a broad category or keyword-lane phrase.",
     "- anchorEvent/currentPeg/currentBridgeRequired/currentBridgeSatisfied are required. Use empty strings/arrays only when no older anchorEvent exists and explain that in notes.",
@@ -1039,6 +1042,7 @@ function buildMainReviewPrompt({
     "- Keyword repetition must not be excessive.",
     "- [SECTION - ...] markers are intentional app markers for Naver section headings. They are allowed in the Writer Agent article field and must not be treated as exposed internal text or a body quality failure.",
     "- The article must not expose internal words such as source candidate, source quality, prompt, JSON, agent, report, handoff, or review as reader-facing text.",
+    "- Return REVISION when the article speaks about its own writing choices, coverage limits, or validation posture instead of explaining the selected subject directly to the reader.",
     "- The first section and opening paragraph must explain the article topic itself, not how the agent verified sources. Return REVISION if the lead reads like a research report or source-verification memo.",
     "- Return REVISION if the opening explains category exclusions, defends what the article is not, or copies category publishing direction instead of starting with the selected subject and reader value.",
     "- For policy/support/recruitment/training topics, PASS only when the body gives practical reader value: target/eligibility, support details, application or checking path, variable items to verify, and cautions when supported by sources.",
@@ -1066,6 +1070,50 @@ function buildMainReviewPrompt({
     "- Use Korean for failureReason, issues, revisionInstructions, and notes.",
     "- If status is PASS, failureReason must be empty and every boolean review field must be true.",
     "- If status is REVISION or BLOCK, failureReason must concisely explain why it cannot be published as-is.",
+    "- Print one final line after writing the file: BLOGAUTO_RESULT_READY"
+  ].filter((line) => line !== "").join("\n");
+}
+
+function buildWriterContractRefinementPrompt({
+  jobDir,
+  researchTitleResult,
+  draftWriterContract,
+  sourceQuality
+}) {
+  const resultPath = path.join(jobDir, "writer-contract-result.json");
+  return [
+    "You are the Main Agent contract refinement step for a Korean Naver Blog automation app.",
+    "Your task is semantic classification, not article writing.",
+    "Read the Research/Title result and the draft Writer Contract.",
+    "Refine the Writer Contract so the Writer Agent receives a clean article brief.",
+    `Output JSON path: ${resultPath}`,
+    "",
+    "Progress logging:",
+    "- BLOGAUTO_PROGRESS: main_review",
+    "- BLOGAUTO_PROGRESS: save",
+    "",
+    "Semantic role rules:",
+    "- Keep reader-facing article content in articleMission, readerPromise, firstSectionFocus, mustAnswer, mustCover, confirmedFacts, and recommendedStructure.",
+    "- Put internal publishing limits, unsupported variables, source gaps, verification boundaries, and risk controls in safetyBoundaries, uncertainItems, sourceBoundaries, or mustNotDo.",
+    "- Do not use token overlap, wording similarity, or phrase matching. Judge by meaning and field role.",
+    "- mustCover and recommendedStructure must describe what useful subject matter the reader should learn, not what the writer should avoid saying.",
+    "- safetyBoundaries are not article material. They protect the article from unsupported claims.",
+    "- If the available confirmed facts cannot support a useful reader-facing article, return status failed instead of turning limitations into the article's main content.",
+    "- Preserve the selected title, topic thesis, target reader, current bridge fields, and factual limits unless they are internally inconsistent.",
+    "",
+    "Draft Writer Contract:",
+    JSON.stringify(draftWriterContract || {}, null, 2),
+    "",
+    "Research/Title Agent result:",
+    JSON.stringify(researchTitleResult || {}, null, 2),
+    "",
+    "Source quality summary:",
+    JSON.stringify(sourceQuality || { status: "unknown" }, null, 2),
+    "",
+    "Required output:",
+    "- Write a UTF-8 JSON file at the exact Output JSON path.",
+    "- JSON shape: { \"status\": \"success\" | \"failed\", \"failureReason\": string, \"writerContract\": { \"articleMission\": string, \"selectedTitle\": string, \"topicThesis\": string, \"targetReader\": string, \"readerPromise\": string, \"firstSectionFocus\": string, \"mustAnswer\": string[], \"mustCover\": string[], \"mustNotDo\": string[], \"confirmedFacts\": string[], \"uncertainItems\": string[], \"sourceBoundaries\": string[], \"safetyBoundaries\": string[], \"recommendedStructure\": string[], \"readerValueChecklist\": string[], \"currentBridgeRequired\": boolean, \"currentBridgeSatisfied\": boolean, \"anchorEvent\": object, \"currentPeg\": object, \"tone\": string }, \"notes\": string[] }.",
+    "- If status is failed, explain why the contract cannot support a publishable reader-facing article.",
     "- Print one final line after writing the file: BLOGAUTO_RESULT_READY"
   ].filter((line) => line !== "").join("\n");
 }
@@ -1108,6 +1156,8 @@ function buildImageWorkerPrompt({
   runtimeRoot,
   includeTitleImage = true,
   imageAspectRatio = DEFAULT_IMAGE_ASPECT_RATIO,
+  titleImageAspectRatio,
+  bodyImageAspectRatio,
   maxBodyImages = 2,
   writerResult,
   finalTitle,
@@ -1115,7 +1165,8 @@ function buildImageWorkerPrompt({
 }) {
   const resultPath = path.join(jobDir, "image-worker-result.json");
   const imageDir = path.join(runtimeRoot || path.dirname(path.dirname(jobDir)), "image");
-  const selectedImageAspectRatio = normalizeImageAspectRatio(imageAspectRatio);
+  const selectedTitleImageAspectRatio = normalizeImageAspectRatio(titleImageAspectRatio || imageAspectRatio);
+  const selectedBodyImageAspectRatio = normalizeImageAspectRatio(bodyImageAspectRatio || imageAspectRatio);
   const bodyImageLimit = Math.min(10, Math.max(0, Number.isFinite(Number(maxBodyImages)) ? Number(maxBodyImages) : 2));
   fs.mkdirSync(imageDir, { recursive: true });
   return [
@@ -1133,8 +1184,10 @@ function buildImageWorkerPrompt({
     "Image generation scope:",
     includeTitleImage ? "- Generate one title image when titleImagePrompt is available." : "- Do not generate a title image.",
     bodyImageLimit > 0 ? `- Generate no more than ${bodyImageLimit} body images from bodyImages[].prompt.` : "- Do not generate body images.",
-    `- Requested image aspect ratio: ${selectedImageAspectRatio}.`,
-    "- Generate every requested image in the requested aspect ratio. Keep the selected orientation and do not substitute a different ratio unless the image tool cannot support it.",
+    `- Requested title image aspect ratio: ${selectedTitleImageAspectRatio}.`,
+    `- Requested body image aspect ratio: ${selectedBodyImageAspectRatio}.`,
+    "- Generate title images in the requested title image aspect ratio and body images in the requested body image aspect ratio.",
+    "- Keep each selected orientation and do not substitute a different ratio unless the image tool cannot support it.",
     "- Do not run shell, PowerShell, Node, Python, Copy-Item, cp, move, or file-copy commands for images.",
     "- Image Worker must not copy image files into the app image directory. The desktop app will copy returned image paths later.",
     "- If image generation returns a file outside the app image directory, return that original generated file path as-is.",
@@ -1149,12 +1202,14 @@ function buildImageWorkerPrompt({
     "",
     "Title image policy:",
     includeTitleImage ? "- The title image is the representative thumbnail for the whole article, not a generic background." : "- Title image generation is disabled.",
+    includeTitleImage ? `- The title image must use aspect ratio ${selectedTitleImageAspectRatio}.` : "",
     includeTitleImage ? "- Korean text is allowed in the title image when it helps summarize the article. Use only short headline/key-point text, verified numbers, periods, benefits, or conditions from the article." : "",
     includeTitleImage ? "- Do not add long Korean paragraphs, fake official marks, unverified amounts, unverified dates, or labels that are not supported by the article." : "",
     includeTitleImage ? "- A card-style Korean blog thumbnail with a clear headline, central subject, and 2-4 visual fact cues is acceptable." : "",
     "",
     "Body image policy:",
     bodyImageLimit > 0 ? "- Body images keep the existing policy: avoid readable Korean text, paragraphs, long labels, UI copy, and text-heavy charts." : "- Body image generation is disabled.",
+    bodyImageLimit > 0 ? `- Every body image must use aspect ratio ${selectedBodyImageAspectRatio}.` : "",
     bodyImageLimit > 0 ? "- Body images should visually support the nearby section with objects, scenes, icons, or process cues." : "",
     "",
     "Writer Agent image handoff:",
@@ -1234,7 +1289,7 @@ function removeAgentResultFile(jobDir, fileName) {
 }
 
 function compactTextList(values) {
-  return values
+  return (Array.isArray(values) ? values : [values])
     .flatMap((value) => (Array.isArray(value) ? value : [value]))
     .map((value) => String(value || "").trim())
     .filter(Boolean);
@@ -1318,6 +1373,7 @@ function readerValueChecklistForContract(researchResult = {}) {
 }
 
 function buildWriterContract(researchResult = {}, context = {}) {
+  const hasRefinedWriterContract = researchResult?.writerContractRefined === true;
   const finalTitle = firstCompactText([
     researchResult?.finalTitle,
     researchResult?.selectedTitle,
@@ -1390,11 +1446,11 @@ function buildWriterContract(researchResult = {}, context = {}) {
     ], "Start with the topic promised by the title from the reader's point of view. Do not begin with source collection, search flow, or verification-process narration."),
     mustAnswer: uniqueCompactTextList([
       researchResult?.writerContract?.mustAnswer,
-      coreQuestions
+      hasRefinedWriterContract ? [] : coreQuestions
     ], 8),
     mustCover: uniqueCompactTextList([
       researchResult?.writerContract?.mustCover,
-      mustCover
+      hasRefinedWriterContract ? [] : mustCover
     ], 12),
     mustNotDo: uniqueCompactTextList([
       researchResult?.writerContract?.mustNotDo,
@@ -1418,9 +1474,15 @@ function buildWriterContract(researchResult = {}, context = {}) {
       researchResult?.writerContract?.sourceBoundaries,
       summarizeUsableSourcesForContract(researchResult?.usableSources)
     ], 8),
+    safetyBoundaries: uniqueCompactTextList([
+      researchResult?.writerContract?.safetyBoundaries,
+      uncertainItems,
+      researchResult?.writerContract?.sourceBoundaries,
+      summarizeUsableSourcesForContract(researchResult?.usableSources)
+    ], 12),
     recommendedStructure: uniqueCompactTextList([
       researchResult?.writerContract?.recommendedStructure,
-      recommendedStructureForContract(researchResult)
+      hasRefinedWriterContract ? [] : recommendedStructureForContract(researchResult)
     ], 8),
     readerValueChecklist: uniqueCompactTextList([
       researchResult?.writerContract?.readerValueChecklist,
@@ -2314,6 +2376,71 @@ async function runCodexGeneration(options, log = () => {}) {
       tokenUsage: tokenUsageSnapshot()
     };
   }
+
+  const refineWriterContract = async (promptFileName = "writer-contract-prompt.txt") => {
+    const draftWriterContract = buildWriterContract(researchResult, {
+      topic: finalTitle || effectiveOptions.topic,
+      finalTitle,
+      preferredTone: effectiveOptions.preferredTone || ""
+    });
+    log("Main Agent Writer Contract 의미 정리 시작", "info", "main");
+    const contractResult = await runCodexTask({
+      options: effectiveOptions,
+      prompt: buildWriterContractRefinementPrompt({
+        jobDir: effectiveOptions.jobDir,
+        researchTitleResult: researchResult,
+        draftWriterContract,
+        sourceQuality: effectiveOptions.sourceQuality
+      }),
+      promptFileName,
+      resultFileName: "writer-contract-result.json",
+      log,
+      tokenOffset: totalTokens,
+      grossTokenOffset: totalGrossTokens,
+      agentTokenOffset: agentTokenTotals.main,
+      agent: "main"
+    });
+    totalTokens += Number(contractResult.tokenUsage?.total || 0);
+    totalGrossTokens += Number(contractResult.tokenUsage?.grossTotal || contractResult.tokenUsage?.total || 0);
+    agentTokenTotals.main += Number(contractResult.tokenUsage?.total || 0);
+    agentGrossTokenTotals.main += Number(contractResult.tokenUsage?.grossTotal || contractResult.tokenUsage?.total || 0);
+    rememberRateLimits(contractResult);
+    const contractStatus = String(contractResult.status || "").toLowerCase();
+    if (contractStatus !== "success" || !contractResult.writerContract || typeof contractResult.writerContract !== "object") {
+      return {
+        ok: false,
+        reason: String(contractResult.failureReason || "Main Agent가 Writer Contract를 발행 가능한 의미 구조로 정리하지 못했습니다.").trim(),
+        result: contractResult
+      };
+    }
+    researchResult = {
+      ...researchResult,
+      writerContract: contractResult.writerContract,
+      writerContractRefined: true,
+      notes: compactTextList([researchResult.notes, contractResult.notes])
+    };
+    log("Main Agent Writer Contract 의미 정리 완료", "info", "main");
+    return { ok: true, result: contractResult };
+  };
+
+  const initialContractRefinement = await refineWriterContract();
+  if (!initialContractRefinement.ok) {
+    return {
+      status: "failed",
+      failurePhase: "main_review",
+      failureReason: initialContractRefinement.reason,
+      title: "",
+      article: "",
+      tags: [],
+      bodyImages: [],
+      titleImagePath: "",
+      notes: compactTextList([initialContractRefinement.reason, initialContractRefinement.result?.notes]),
+      researchTitleResult: researchResult,
+      mainReviewResult: initialContractRefinement.result,
+      tokenUsage: tokenUsageSnapshot()
+    };
+  }
+
   const maxReviewAttempts = String(effectiveOptions.topicMode || "").toLowerCase() === "auto" ? 3 : 1;
   let writerResult = null;
   let mainReviewResult = null;
@@ -2529,6 +2656,23 @@ async function runCodexGeneration(options, log = () => {}) {
             tokenUsage: tokenUsageSnapshot()
           };
         }
+        const supplementalContractRefinement = await refineWriterContract("writer-contract-writer-source-search-prompt.txt");
+        if (!supplementalContractRefinement.ok) {
+          return {
+            status: "failed",
+            failurePhase: "main_review",
+            failureReason: supplementalContractRefinement.reason,
+            title: "",
+            article: "",
+            tags: [],
+            bodyImages: [],
+            titleImagePath: "",
+            notes: compactTextList([supplementalContractRefinement.reason, supplementalContractRefinement.result?.notes, writerIssueReason]),
+            researchTitleResult: researchResult,
+            mainReviewResult: supplementalContractRefinement.result,
+            tokenUsage: tokenUsageSnapshot()
+          };
+        }
         writerRevisionFeedback = "";
         attempt = Math.max(0, attempt - 1);
         log(`Writer Agent 근거 보강 후 본문 작성을 다시 시도합니다 (${attempt + 1}/${maxReviewAttempts})`, "warn", "main");
@@ -2686,6 +2830,7 @@ module.exports = {
   fetchCodexUsageSnapshot,
   _private: {
     compactSearchResultsForPrompt,
-    rankSearchResultsForPrompt
+    rankSearchResultsForPrompt,
+    buildWriterContract
   }
 };

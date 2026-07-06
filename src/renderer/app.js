@@ -1132,7 +1132,8 @@ function collectForm(target = {}) {
     publishScheduleMode: $("#publishScheduleMode").value,
     reserveAfterHours: Number($("#reserveAfterHours").value || 0),
     includeTitleImage: $("#includeTitleImage").checked,
-    imageAspectRatio: normalizeImageAspectRatio($("#imageAspectRatio").value),
+    titleImageAspectRatio: normalizeImageAspectRatio($("#titleImageAspectRatio").value),
+    bodyImageAspectRatio: normalizeImageAspectRatio($("#bodyImageAspectRatio").value),
     maxBodyImages: Number($("#maxBodyImages").value),
     breakSentencesInBody: $("#breakSentencesInBody").checked,
     agentModels: currentAgentModels(),
@@ -1161,7 +1162,8 @@ function applySettings(settings) {
   if ($("#publishToTistoryAfterNaver")) $("#publishToTistoryAfterNaver").checked = settings.publishToTistoryAfterNaver === true;
   state.tistorySessionStatus = settings.tistorySessionStatus || "unknown";
   $("#includeTitleImage").checked = settings.includeTitleImage !== false;
-  $("#imageAspectRatio").value = normalizeImageAspectRatio(settings.imageAspectRatio);
+  $("#titleImageAspectRatio").value = normalizeImageAspectRatio(settings.titleImageAspectRatio || settings.imageAspectRatio);
+  $("#bodyImageAspectRatio").value = normalizeImageAspectRatio(settings.bodyImageAspectRatio || settings.imageAspectRatio);
   $("#breakSentencesInBody").checked = settings.breakSentencesInBody !== false;
   applyAgentModels(settings.agentModels);
   if (settings.publishPrivate === false) $("#publishVisibility").value = "public";
@@ -1193,7 +1195,8 @@ async function saveSettingsNow() {
     publishScheduleMode: form.publishScheduleMode,
     reserveAfterHours: form.reserveAfterHours,
     includeTitleImage: form.includeTitleImage,
-    imageAspectRatio: form.imageAspectRatio,
+    titleImageAspectRatio: form.titleImageAspectRatio,
+    bodyImageAspectRatio: form.bodyImageAspectRatio,
     maxBodyImages: form.maxBodyImages,
     breakSentencesInBody: form.breakSentencesInBody,
     agentModels: form.agentModels
@@ -1911,12 +1914,14 @@ async function boot() {
       });
     });
   }
-  $("#imageAspectRatio").addEventListener("change", () => {
-    saveSettingsNow().catch((error) => {
-      $("#settingsState").textContent = "설정 저장 실패";
-      addLog({ level: "error", message: error.message, at: new Date().toISOString() });
+  for (const selector of ["#titleImageAspectRatio", "#bodyImageAspectRatio"]) {
+    $(selector).addEventListener("change", () => {
+      saveSettingsNow().catch((error) => {
+        $("#settingsState").textContent = "설정 저장 실패";
+        addLog({ level: "error", message: error.message, at: new Date().toISOString() });
+      });
     });
-  });
+  }
   $("#topicMode").addEventListener("change", updateModeControls);
   $("#publishVisibility").addEventListener("change", updateModeControls);
   $("#publishScheduleMode").addEventListener("change", updateModeControls);

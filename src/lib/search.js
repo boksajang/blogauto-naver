@@ -73,6 +73,50 @@ const NAVER_BLOG_SEARCH_URL = "https://search.naver.com/search.naver?ssc=tab.blo
 const NAVER_NEWS_SEARCH_URL = "https://search.naver.com/search.naver?ssc=tab.news.all&where=news&sm=tab_jum&query={query}";
 const NAVER_WEB_SEARCH_URL = "https://search.naver.com/search.naver?where=web&query={query}";
 
+function normalizeFreshnessLevel(value) {
+  return ["auto", "low", "medium", "high"].includes(String(value || "").toLowerCase())
+    ? String(value).toLowerCase()
+    : "auto";
+}
+
+function parseReferenceDate(value = "") {
+  if (value instanceof Date && !Number.isNaN(value.getTime())) return value;
+  const text = String(value || "").trim();
+  const korean = text.match(/(20\d{2})\s*년\s*(\d{1,2})\s*월\s*(\d{1,2})?\s*일?/);
+  if (korean) {
+    const year = Number(korean[1]);
+    const month = Number(korean[2]);
+    const day = Number(korean[3] || 1);
+    return new Date(year, month - 1, day);
+  }
+  const parsed = text ? new Date(text) : new Date();
+  return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
+}
+
+function freshnessDateHints(options = {}) {
+  if (normalizeFreshnessLevel(options.freshnessLevel) !== "high") return [];
+  const date = parseReferenceDate(options.currentDate || options.writingDate || options.today);
+  const year = date.getFullYear();
+  const month = date.getMonth() + 1;
+  const previousDate = new Date(year, month - 2, 1);
+  const previousYear = previousDate.getFullYear();
+  const previousMonth = previousDate.getMonth() + 1;
+  return uniqueStrings([
+    `${year}년 ${month}월`,
+    `${previousYear}년 ${previousMonth}월`,
+    `${year}년`,
+    "최신",
+    "최근",
+    "발표",
+    "보도자료",
+    "원문"
+  ]);
+}
+
+function freshnessSearchSuffix(options = {}) {
+  return freshnessDateHints(options).slice(0, 8).join(" ");
+}
+
 function fetchText(url) {
   return new Promise((resolve, reject) => {
     const client = /^http:\/\//i.test(url) ? http : https;
@@ -250,6 +294,10 @@ function evidenceText(options) {
   ].filter(Boolean).join(" ");
 }
 
+function highFreshnessEnabled(options = {}) {
+  return normalizeFreshnessLevel(options.freshnessLevel) === "high";
+}
+
 function requiresStrictSourceEvidence(options) {
   const searchNeed = String(options.searchNeed || "").toLowerCase();
   if (searchNeed !== "strict") return false;
@@ -277,7 +325,9 @@ function buildSearchProfile(options) {
     authorityEvidence: requiresAuthoritySourceEvidence(options),
     independentEvidence,
     keywordPhrases: splitKeywordPhrases(options.keyword),
-    trustBlogAsSource: options.trustBlogAsSource === true
+    trustBlogAsSource: options.trustBlogAsSource === true,
+    highFreshness: highFreshnessEnabled(options),
+    referenceDate: parseReferenceDate(options.currentDate || options.writingDate || options.today)
   };
 }
 
@@ -288,15 +338,43 @@ function candidateSignals(candidate, profile) {
     .filter((phrase) => lower.includes(phrase.toLowerCase()))
     .slice(0, 10);
   const blogTrustedSource = profile.strictEvidence && isTrustedBlogSource(candidate.url, profile);
+  const freshness = candidateFreshnessSignals(text, profile);
   return {
     officialSource: profile.strictEvidence && isOfficialDomain(candidate.url),
     institutionalSource: profile.strictEvidence && isInstitutionalDomain(candidate.url),
     independentSource: profile.strictEvidence && isIndependentEditorialSource(candidate.url),
     blogTrustedSource,
     lowTrustSource: profile.strictEvidence && isLowTrustDomain(candidate.url) && !blogTrustedSource,
-    currentFactSignal: profile.strictEvidence && (CURRENT_FACT_PATTERN.test(text) || DATE_FACT_PATTERN.test(text)),
-    phraseMatches
+    currentFactSignal: profile.strictEvidence
+      && (CURRENT_FACT_PATTERN.test(text) || DATE_FACT_PATTERN.test(text))
+      && freshness.staleYear !== true,
+    phraseMatches,
+    staleYear: freshness.staleYear,
+    currentYearSignal: freshness.currentYearSignal,
+    recentMonthSignal: freshness.recentMonthSignal
   };
+}
+
+function candidateFreshnessSignals(text, profile = {}) {
+  if (!profile.highFreshness) {
+    return { staleYear: false, currentYearSignal: false, recentMonthSignal: false };
+  }
+  const reference = parseReferenceDate(profile.referenceDate);
+  const currentYear = reference.getFullYear();
+  const currentMonth = reference.getMonth() + 1;
+  const previousDate = new Date(currentYear, currentMonth - 2, 1);
+  const recentPairs = new Set([
+    `${currentYear}-${currentMonth}`,
+    `${previousDate.getFullYear()}-${previousDate.getMonth() + 1}`
+  ]);
+  const years = [...String(text || "").matchAll(/(20\d{2})\s*년?/g)].map((match) => Number(match[1]));
+  const yearMonthPairs = [...String(text || "").matchAll(/(20\d{2})\s*년\s*(\d{1,2})\s*월/g)]
+    .map((match) => `${Number(match[1])}-${Number(match[2])}`);
+  const hasExplicitYear = years.length > 0;
+  const currentYearSignal = years.includes(currentYear);
+  const recentMonthSignal = yearMonthPairs.some((pair) => recentPairs.has(pair));
+  const staleYear = hasExplicitYear && !currentYearSignal;
+  return { staleYear, currentYearSignal, recentMonthSignal };
 }
 
 function parseLinks(html, provider) {
@@ -498,6 +576,9 @@ function scoreCandidate(candidate, commonTokens, options, profile = buildSearchP
   if (signals.blogTrustedSource) score += 2;
   if (signals.currentFactSignal) score += 4;
   if (signals.lowTrustSource) score -= 4;
+  if (signals.currentYearSignal) score += 2;
+  if (signals.recentMonthSignal) score += 3;
+  if (signals.staleYear) score -= 10;
   if ((candidate.excerpt || "").length > 180) score += 2;
   return {
     score,
@@ -510,6 +591,9 @@ function scoreCandidate(candidate, commonTokens, options, profile = buildSearchP
     blogTrustedSource: signals.blogTrustedSource,
     lowTrustSource: signals.lowTrustSource,
     currentFactSignal: signals.currentFactSignal,
+    staleYear: signals.staleYear,
+    currentYearSignal: signals.currentYearSignal,
+    recentMonthSignal: signals.recentMonthSignal,
     strictEvidence: profile.strictEvidence,
     authorityEvidence: profile.authorityEvidence,
     independentEvidence: profile.independentEvidence
@@ -882,7 +966,8 @@ async function collectSearchResults(options, log = () => {}) {
     }
     return collected;
   };
-  let all = await collectRawCandidates();
+  const initialFreshnessSuffix = profile.highFreshness ? freshnessSearchSuffix(options) : "";
+  let all = await collectRawCandidates(initialFreshnessSuffix);
 
   const buildFilteredCandidates = (items) => {
     const seen = new Set();
@@ -971,13 +1056,15 @@ async function collectSearchResults(options, log = () => {}) {
     const suffix = profile.independentEvidence
       ? focusedIndependentSearchSuffix(options, profile, selected.length ? selected : withContent)
       : focusedOfficialSearchSuffix(options, profile, selected.length ? selected : withContent);
-    if (suffix) {
+    const freshnessSuffix = profile.highFreshness ? freshnessSearchSuffix(options) : "";
+    const refinedSuffix = [suffix, freshnessSuffix].filter(Boolean).join(" ");
+    if (refinedSuffix) {
       log(profile.authorityEvidence
         ? "공식/기관 근거가 필요한 검색으로 판단되어 공식사이트 보강 검색을 실행합니다."
         : profile.independentEvidence
           ? "독립 신뢰 근거가 필요한 검색으로 판단되어 넓은 웹 보강 검색을 실행합니다."
           : "현재성/신뢰 근거가 필요한 검색으로 판단되어 보강 검색합니다.", "info");
-      const refined = await collectRawCandidates(suffix);
+      const refined = await collectRawCandidates(refinedSuffix);
       const authorityRefined = refined.filter((item) => isOfficialDomain(item.url) || isInstitutionalDomain(item.url));
       const independentRefined = refined.filter((item) => isIndependentEditorialSource(item.url));
       candidates = mergeCandidateLists([...authorityRefined, ...independentRefined, ...refined], candidates, 20);
@@ -1112,6 +1199,8 @@ module.exports = {
     requiresAuthoritySourceEvidence,
     requiresIndependentSourceEvidence,
     isIndependentEditorialSource,
+    freshnessDateHints,
+    freshnessSearchSuffix,
     selectAuthorityClues,
     selectEvidenceSearchTerms,
     extractAuthorityLinks,

@@ -1031,7 +1031,8 @@ async function startJob(form) {
   const publishScheduleMode = String(form.publishScheduleMode || "now");
   const reserveAfterHours = Number(form.reserveAfterHours || 0);
   const includeTitleImage = form.includeTitleImage !== false;
-  const imageAspectRatio = normalizeImageAspectRatio(form.imageAspectRatio || settings.imageAspectRatio);
+  const titleImageAspectRatio = normalizeImageAspectRatio(form.titleImageAspectRatio || settings.titleImageAspectRatio || form.imageAspectRatio || settings.imageAspectRatio);
+  const bodyImageAspectRatio = normalizeImageAspectRatio(form.bodyImageAspectRatio || settings.bodyImageAspectRatio || form.imageAspectRatio || settings.imageAspectRatio);
   const maxBodyImages = Math.min(10, Math.max(0, Number.isFinite(Number(form.maxBodyImages)) ? Number(form.maxBodyImages) : 2));
   const breakSentencesInBody = form.breakSentencesInBody !== false;
   const agentModels = form.agentModels || settings.agentModels || {};
@@ -1172,7 +1173,8 @@ async function startJob(form) {
     publishToTistoryAfterNaver,
     tistoryBlogId,
     includeTitleImage,
-    imageAspectRatio,
+    titleImageAspectRatio,
+    bodyImageAspectRatio,
     maxBodyImages,
     breakSentencesInBody,
     agentModels
@@ -1378,7 +1380,8 @@ async function startJob(form) {
         searchResults: [],
         currentDateLabel,
         includeTitleImage,
-        imageAspectRatio,
+        titleImageAspectRatio,
+        bodyImageAspectRatio,
         maxBodyImages,
         sourceQuality: { status: "not_requested" },
         excludedTopics: form.excludedTopics || "",
@@ -1502,7 +1505,9 @@ async function startJob(form) {
             naverSearchUrl: form.naverSearchUrl,
             googleSearchUrl: form.googleSearchUrl,
             searchChannel: form.searchChannel || "blog",
-            trustBlogAsSource: form.trustBlogAsSource === true
+            trustBlogAsSource: form.trustBlogAsSource === true,
+            freshnessLevel: form.freshnessLevel || "auto",
+            currentDate: currentDateLabel
           }, (message, level) => safeLog(jobId, message, level, "research"));
           const mergedSearchResults = mergeSearchResults(searchContext.previousSearchResults, searchResults);
           safeLog(jobId, `검색 후보 수집 완료: ${searchResults.length}개, 누적 ${mergedSearchResults.length}개`, "info", "research");
@@ -1513,7 +1518,9 @@ async function startJob(form) {
             publishPurpose: form.publishPurpose || "",
             researchGuidance,
             searchQueries: laneResult.searchQueries,
-            searchNeed: researchResult.searchNeed || ""
+            searchNeed: researchResult.searchNeed || "",
+            freshnessLevel: form.freshnessLevel || "auto",
+            currentDate: currentDateLabel
           });
           if (sourceQuality.status === "insufficient") {
             safeLog(jobId, sourceQuality.reason, "warn", "research");

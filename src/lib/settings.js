@@ -32,6 +32,8 @@ const DEFAULT_SETTINGS = {
   tistorySessionCheckedAt: "",
   includeTitleImage: true,
   imageAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO,
+  titleImageAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO,
+  bodyImageAspectRatio: DEFAULT_IMAGE_ASPECT_RATIO,
   maxBodyImages: 2,
   breakSentencesInBody: true,
   agentModels: {
@@ -62,6 +64,8 @@ function normalizeSettings(settings) {
     normalized.naverSearchUrl = DEFAULT_NAVER_SEARCH_URL;
   }
   normalized.imageAspectRatio = normalizeImageAspectRatio(normalized.imageAspectRatio);
+  normalized.titleImageAspectRatio = normalizeImageAspectRatio(normalized.titleImageAspectRatio || normalized.imageAspectRatio);
+  normalized.bodyImageAspectRatio = normalizeImageAspectRatio(normalized.bodyImageAspectRatio || normalized.imageAspectRatio);
   return normalized;
 }
 
@@ -75,14 +79,21 @@ function readSettings(runtimeRoot) {
   try {
     const raw = fs.readFileSync(getSettingsPath(runtimeRoot), "utf8").replace(/^\uFEFF/, "");
     const parsed = JSON.parse(raw);
-    return normalizeSettings({
+    const merged = {
       ...DEFAULT_SETTINGS,
       ...parsed,
       agentModels: {
         ...DEFAULT_SETTINGS.agentModels,
         ...(parsed.agentModels || {})
       }
-    });
+    };
+    if (!Object.prototype.hasOwnProperty.call(parsed, "titleImageAspectRatio")) {
+      merged.titleImageAspectRatio = parsed.imageAspectRatio;
+    }
+    if (!Object.prototype.hasOwnProperty.call(parsed, "bodyImageAspectRatio")) {
+      merged.bodyImageAspectRatio = parsed.imageAspectRatio;
+    }
+    return normalizeSettings(merged);
   } catch {
     return { ...DEFAULT_SETTINGS };
   }
