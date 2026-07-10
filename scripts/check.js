@@ -1420,6 +1420,30 @@ if (
   failed = true;
   console.error("src/lib/codexRunner.js: Main Agent review must reject article-self/meta-writing viewpoint");
 }
+if (
+  writerPrompt
+  && (
+    !writerPrompt.content.includes("reader-facing subject-state sentences")
+    || !writerPrompt.content.includes("not as the default way to state confirmed menus, programs, facts, or conditions")
+  )
+) {
+  failed = true;
+  console.error("src/lib/codexRunner.js: Writer Agent prompt must convert source observations into reader-facing subject-state facts");
+}
+if (
+  !sourceFiles.codexRunner.content.includes("Convert source-observation wording into subject-state wording")
+  || !sourceFiles.codexRunner.content.includes("what exists, where it belongs, what changes, who is affected")
+) {
+  failed = true;
+  console.error("src/lib/codexRunner.js: Writer Contract refinement must semantically convert source-observation wording before writing");
+}
+if (
+  mainReviewPrompt
+  && !mainReviewPrompt.content.includes("source-observation or writer-observation statements")
+) {
+  failed = true;
+  console.error("src/lib/codexRunner.js: Main Agent review must reject source-observation viewpoint in reader-facing body");
+}
 if (!sourceFiles.codexRunner.content.includes("context.preferredTone,\n      researchResult?.writerContract?.tone")) {
   failed = true;
   console.error("src/lib/codexRunner.js: buildWriterContract must prefer user preferredTone over Research/Title tone");
