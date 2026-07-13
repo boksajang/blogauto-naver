@@ -204,27 +204,35 @@ function limitBadgeClass(limitWindow) {
   return "badge limit";
 }
 
+function codexLimitWindows(rateLimits) {
+  return [rateLimits?.primary, rateLimits?.secondary]
+    .filter((limitWindow) => limitWindow && typeof limitWindow === "object");
+}
+
+function weeklyCodexLimitWindow(rateLimits) {
+  const windows = codexLimitWindows(rateLimits);
+  const weekly = windows.find((limitWindow) => Number(limitWindow.windowMinutes) === 10080);
+  if (weekly) return weekly;
+  return windows
+    .slice()
+    .sort((left, right) => Number(right.windowMinutes || 0) - Number(left.windowMinutes || 0))[0] || null;
+}
+
 function renderCodexRateLimits(status = "") {
-  const primaryBadge = $("#codexPrimaryLimitBadge");
-  const secondaryBadge = $("#codexSecondaryLimitBadge");
-  if (!primaryBadge || !secondaryBadge) return;
+  const weeklyBadge = $("#codexWeeklyLimitBadge");
+  if (!weeklyBadge) return;
 
   const rateLimits = state.codexRateLimits || {};
-  const primary = rateLimits.primary || null;
-  const secondary = rateLimits.secondary || null;
+  const weekly = weeklyCodexLimitWindow(rateLimits);
 
-  primaryBadge.className = limitBadgeClass(primary);
-  secondaryBadge.className = limitBadgeClass(secondary);
-  primaryBadge.textContent = `5시간 잔량 ${formatPercent(primary?.remainingPercent)}`;
-  secondaryBadge.textContent = `주간 잔량 ${formatPercent(secondary?.remainingPercent)}`;
+  weeklyBadge.className = limitBadgeClass(weekly);
+  weeklyBadge.textContent = `주간 잔량 ${formatPercent(weekly?.remainingPercent)}`;
 
-  if (status === "checking" && !primary && !secondary) {
-    primaryBadge.textContent = "5시간 확인 중";
-    secondaryBadge.textContent = "주간 확인 중";
+  if (status === "checking" && !weekly) {
+    weeklyBadge.textContent = "주간 확인 중";
   }
-  if (status === "failed" && !primary && !secondary) {
-    primaryBadge.textContent = "5시간 확인 실패";
-    secondaryBadge.textContent = "주간 확인 실패";
+  if (status === "failed" && !weekly) {
+    weeklyBadge.textContent = "주간 확인 실패";
   }
 }
 

@@ -63,8 +63,7 @@ const path = require("node:path");
       ["body image aspect ratio", "#bodyImageAspectRatio"],
       ["image grid", "#imageGrid"],
       ["history", "#historyBody"],
-      ["codex primary usage badge", "#codexPrimaryLimitBadge"],
-      ["codex weekly usage badge", "#codexSecondaryLimitBadge"]
+      ["codex weekly usage badge", "#codexWeeklyLimitBadge"]
     ];
 
     for (const [name, selectorOrText] of checks) {

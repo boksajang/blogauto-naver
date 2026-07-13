@@ -1035,9 +1035,13 @@ if (!sourceFiles.preload.content.includes("refreshCodexUsage")) {
   failed = true;
   console.error("src/preload.js: renderer must be able to request startup Codex usage refresh");
 }
-if (!sourceFiles.rendererIndex.content.includes("codexPrimaryLimitBadge") || !sourceFiles.rendererIndex.content.includes("codexSecondaryLimitBadge")) {
+if (!sourceFiles.rendererIndex.content.includes("codexWeeklyLimitBadge")) {
   failed = true;
-  console.error("src/renderer/index.html: topbar must include primary and secondary Codex usage badges");
+  console.error("src/renderer/index.html: topbar must include the weekly Codex usage badge");
+}
+if (sourceFiles.rendererIndex.content.includes("codexPrimaryLimitBadge") || sourceFiles.rendererIndex.content.includes("codexSecondaryLimitBadge")) {
+  failed = true;
+  console.error("src/renderer/index.html: topbar must not show obsolete primary/secondary Codex usage badges");
 }
 if (!sourceFiles.rendererApp.content.includes("refreshCodexUsageOnStartup")) {
   failed = true;
@@ -1054,6 +1058,14 @@ if (!sourceFiles.rendererApp.content.includes("payload.rateLimits") || !sourceFi
 if (!sourceFiles.rendererApp.content.includes("remainingPercent")) {
   failed = true;
   console.error("src/renderer/app.js: renderer must display remaining percent values");
+}
+if (
+  !sourceFiles.rendererApp.content.includes("function weeklyCodexLimitWindow")
+  || !sourceFiles.rendererApp.content.includes("Number(limitWindow.windowMinutes) === 10080")
+  || sourceFiles.rendererApp.content.includes("5시간 잔량")
+) {
+  failed = true;
+  console.error("src/renderer/app.js: renderer must display only the weekly Codex usage limit and select it by window duration");
 }
 if (!sourceFiles.main.content.includes("error.code === \"CODEX_USAGE_LIMIT\" ? \"codex_usage_limit\"")) {
   failed = true;

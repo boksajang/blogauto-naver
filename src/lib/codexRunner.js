@@ -64,7 +64,7 @@ function createCodexUsageLimitError(rateLimitType = "", detail = "") {
   const normalizedType = normalizeRateLimitType(rateLimitType);
   const isUsageLimit = CODEX_USAGE_LIMIT_TYPES.has(normalizedType) || /usage_limit/i.test(normalizedType);
   const message = isUsageLimit
-    ? "Codex 사용량 한도(5시간 또는 주간 한도)에 도달해 작업을 중단합니다. 한도가 초기화된 뒤 다시 실행해 주세요."
+    ? "Codex 사용량 한도에 도달해 작업을 중단합니다. 한도가 초기화되거나 사용량이 추가된 뒤 다시 실행해 주세요."
     : "Codex 한도에 도달해 작업을 중단합니다. 한도가 초기화되거나 제한이 해제된 뒤 다시 실행해 주세요.";
   const error = new Error(message);
   error.code = "CODEX_USAGE_LIMIT";
