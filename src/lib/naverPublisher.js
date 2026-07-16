@@ -531,6 +531,16 @@ function quotedTextSelector(text) {
   return String(text || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
+function defaultNaverLoginSubmitSelectors() {
+  return [
+    "#loginBtn_row",
+    "button#loginBtn_row.btn_done",
+    "button.btn_done:has(span[data-i18n='btnLogin'])",
+    ".btn_login",
+    "button[type='submit']"
+  ];
+}
+
 async function visibleCount(page, selector) {
   const locator = page.locator(selector);
   const count = await locator.count().catch(() => 0);
@@ -750,7 +760,7 @@ async function verifyOpenNaverSession(options) {
   const selectors = {
     idInput: "#id",
     passwordInput: "#pw",
-    loginSubmit: ".btn_login, button[type='submit']",
+    loginSubmit: defaultNaverLoginSubmitSelectors(),
     titleInput: "textarea[placeholder*='?쒕ぉ'], input[placeholder*='?쒕ぉ'], .se-title-text [contenteditable='true'], .se-title [contenteditable='true'], .se-title-text textarea, .se-title-text input",
     ...parseDomNotes(options.domNotes)
   };
@@ -814,7 +824,7 @@ async function prepareNaverPostWrite(options) {
   const selectors = {
     idInput: "#id",
     passwordInput: "#pw",
-    loginSubmit: ".btn_login, button[type='submit']",
+    loginSubmit: defaultNaverLoginSubmitSelectors(),
     titleInput: "textarea[placeholder*='제목'], input[placeholder*='제목'], .se-title-text [contenteditable='true'], .se-title [contenteditable='true'], .se-title-text textarea, .se-title-text input",
     ...parseDomNotes(options.domNotes)
   };
@@ -2205,7 +2215,7 @@ async function publishToNaver(options) {
   const selectors = {
     idInput: "#id",
     passwordInput: "#pw",
-    loginSubmit: ".btn_login, button[type='submit']",
+    loginSubmit: defaultNaverLoginSubmitSelectors(),
     titleInput: "textarea[placeholder*='제목'], input[placeholder*='제목'], .se-title-text [contenteditable='true'], .se-title [contenteditable='true'], .se-title-text textarea, .se-title-text input",
     bodyEditor: ".se-section-text .se-module-text, .se-module-text p, .se-module-text, .se-section-text [contenteditable='true'], div[contenteditable='true']",
     imageButton: [
@@ -2498,7 +2508,7 @@ async function checkNaverSession(options) {
     const selectors = {
       idInput: "#id",
       passwordInput: "#pw",
-      loginSubmit: ".btn_login, button[type='submit']",
+      loginSubmit: defaultNaverLoginSubmitSelectors(),
       titleInput: "textarea[placeholder*='제목'], input[placeholder*='제목'], .se-title-text [contenteditable='true'], .se-title [contenteditable='true'], .se-title-text textarea, .se-title-text input",
       ...parseDomNotes(options.domNotes)
     };

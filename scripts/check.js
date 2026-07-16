@@ -1523,6 +1523,15 @@ if (clickFirstVisible && clickFirstVisible.content.includes(".first().waitFor"))
   console.error("src/lib/naverPublisher.js: clickFirstVisible must not throw before fallback when no selector is attached");
 }
 const completeLogin = extractFunctionBlock(sourceFiles.naverPublisher, "async function completeLoginIfNeeded", "completeLoginIfNeeded function");
+if (
+  !sourceFiles.naverPublisher.content.includes("function defaultNaverLoginSubmitSelectors")
+  || !sourceFiles.naverPublisher.content.includes("#loginBtn_row")
+  || !sourceFiles.naverPublisher.content.includes("span[data-i18n='btnLogin']")
+  || !sourceFiles.naverPublisher.content.includes("loginSubmit: defaultNaverLoginSubmitSelectors()")
+) {
+  failed = true;
+  console.error("src/lib/naverPublisher.js: Naver login submit selector must support the current #loginBtn_row button across session and publish flows");
+}
 if (completeLogin && !completeLogin.content.includes("existingMatchesExpectedId")) {
   failed = true;
   console.error("src/lib/naverPublisher.js: prefilled Naver login ID must be compared with the target account ID");
