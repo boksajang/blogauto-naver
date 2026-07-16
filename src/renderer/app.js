@@ -334,7 +334,7 @@ async function checkAccountSession(account, options = {}) {
       state.tistorySessionStatus = result.tistorySession.status || "unknown";
       addLog({
         level: tistoryValid ? "info" : "warn",
-        message: tistoryValid ? "Tistory session check complete." : `Tistory session check failed: ${result.tistorySession.reason || result.tistorySession.status}`,
+        message: tistoryValid ? "티스토리 세션 확인 완료." : `티스토리 세션 확인 실패: ${result.tistorySession.reason || result.tistorySession.status}`,
         at: new Date().toISOString()
       });
     }
@@ -446,12 +446,12 @@ async function checkSelectedAccountSessions() {
         state.tistorySessionStatus = tistoryResult.status || "unknown";
         addLog({
           level: tistoryResult.status === "valid" ? "info" : "warn",
-          message: tistoryResult.status === "valid" ? "Tistory session check complete." : `Tistory session check failed: ${tistoryResult.reason || tistoryResult.status}`,
+          message: tistoryResult.status === "valid" ? "티스토리 세션 확인 완료." : `티스토리 세션 확인 실패: ${tistoryResult.reason || tistoryResult.status}`,
           at: new Date().toISOString()
         });
       } catch (error) {
         state.tistorySessionStatus = "expired";
-        addLog({ level: "warn", message: `Tistory session check failed: ${error.message}`, at: new Date().toISOString() });
+        addLog({ level: "warn", message: `티스토리 세션 확인 실패: ${error.message}`, at: new Date().toISOString() });
       }
     }
     for (const account of accounts) {
@@ -1354,7 +1354,7 @@ async function startAutoPublishing(startTargetKey = "") {
     throw new Error("All selected Naver sessions are expired. Check at least one Naver session before starting auto publishing.");
   }
   const startupForm = collectForm();
-  if (startupForm.publishToTistoryAfterNaver && !startupForm.tistoryBlogId) throw new Error("Tistory blog ID is required.");
+  if (startupForm.publishToTistoryAfterNaver && !startupForm.tistoryBlogId) throw new Error("티스토리 블로그 ID가 필요합니다.");
   state.running = true;
   state.autoRunning = true;
   state.autoPausedForSession = false;
@@ -1524,7 +1524,7 @@ async function startAutoPublishing(startTargetKey = "") {
 
 async function startManualJob() {
   const form = collectForm();
-  if (form.publishAfterGenerate && form.publishToTistoryAfterNaver && !form.tistoryBlogId) throw new Error("Tistory blog ID is required.");
+  if (form.publishAfterGenerate && form.publishToTistoryAfterNaver && !form.tistoryBlogId) throw new Error("티스토리 블로그 ID가 필요합니다.");
   if (!form.topic) throw new Error("수동 방식에서는 주제가 필요합니다.");
   if (!form.category) throw new Error("선택 계정에서 카테고리를 체크하세요.");
   if (!form.keyword) throw new Error("선택한 카테고리에 검색 키워드를 등록하세요.");
@@ -1552,24 +1552,24 @@ async function startManualJob() {
 
 async function startTistoryTestPublish() {
   const form = collectForm();
-  if (!form.tistoryBlogId) throw new Error("Tistory blog ID is required.");
+  if (!form.tistoryBlogId) throw new Error("티스토리 블로그 ID가 필요합니다.");
   state.running = true;
   $("#startButton").disabled = true;
   setTistoryTestButtonDisabled(true);
   await saveSettingsNow();
   setTokenTotal(0);
   $("#articlePreview").value = "";
-  $("#selectedTitle").textContent = "Tistory test";
+  $("#selectedTitle").textContent = "티스토리 테스트";
   renderImages([]);
   renderImageNotes([]);
-  setRunState("publishing", "Tistory test");
+  setRunState("publishing", "티스토리 테스트");
   try {
     const result = await window.blogAuto.testTistoryPublish({
       ...form,
       failOnLoginRequired: false
     });
     $("#articlePreview").value = result.article || $("#articlePreview").value;
-    $("#articleMeta").textContent = result.title || "Tistory test complete";
+    $("#articleMeta").textContent = result.title || "티스토리 테스트 완료";
     if (result.title) $("#selectedTitle").textContent = result.title;
     renderImages(result.images || []);
     renderImageNotes(result.imageNotes || []);
@@ -1673,7 +1673,7 @@ async function boot() {
       $("#startButton").disabled = false;
       setTistoryTestButtonDisabled(false);
       $("#stopAutoButton").disabled = true;
-      setRunState("failed", "Tistory test failed");
+      setRunState("failed", "티스토리 테스트 실패");
       addLog({ level: "error", message: error.message, at: new Date().toISOString() });
     }
   });

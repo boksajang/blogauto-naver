@@ -221,14 +221,14 @@ function ensureTistoryTestImage(runtimeRoot) {
 
 function buildTistoryTestArticle() {
   return [
-    "[SECTION - Editor input test]",
-    "This is a Tistory-only automation test post.",
-    "It skips Naver session checks, article generation, image generation, and Naver publishing.",
+    "[SECTION - 편집기 입력 테스트]",
+    "이 글은 티스토리 전용 자동화 테스트 글입니다.",
+    "네이버 세션 확인, 본문 생성, 이미지 생성, 네이버 발행 과정을 건너뛰고 티스토리 입력과 발행 흐름만 확인합니다.",
     "",
     "[IMAGE INSERT - 1]",
     "",
-    "[SECTION - Publish flow test]",
-    "If this post appears in the Tistory post list, Kakao login, title input, body input, image upload, category selection, and final publish were reached."
+    "[SECTION - 발행 흐름 테스트]",
+    "이 글이 티스토리 글 목록에 보이면 카카오 로그인, 제목 입력, 본문 입력, 이미지 업로드, 카테고리 선택, 최종 발행 단계까지 도달한 것입니다."
   ].join("\n");
 }
 
@@ -848,8 +848,8 @@ async function verifyTistorySessionBeforeGeneration({ runtimeRoot, form, setting
   const tistoryBlogId = String(form.tistoryBlogId || settings.tistoryBlogId || "").trim();
   const browserProfileDir = getTistoryProfileDir(runtimeRoot, tistoryBlogId);
   const key = tistorySessionKey(tistoryBlogId, browserProfileDir);
-  updateStatus(jobId, "publishing", "Tistory editor session check");
-  safeLog(jobId, `Tistory profile: ${browserProfileDir}`);
+  updateStatus(jobId, "publishing", "티스토리 편집기 세션 확인");
+  safeLog(jobId, `티스토리 프로필: ${browserProfileDir}`);
   try {
     const existingSession = reusableTistorySession(key);
     if (existingSession) {
@@ -857,7 +857,7 @@ async function verifyTistorySessionBeforeGeneration({ runtimeRoot, form, setting
         tistorySessionStatus: "valid",
         tistorySessionCheckedAt: new Date().toISOString()
       });
-      safeLog(jobId, "Reusing open Tistory editor session.");
+      safeLog(jobId, "열려 있는 티스토리 편집기 세션을 재사용합니다.");
       return {
         status: "valid",
         reason: "reused_open_tistory_editor",
@@ -883,20 +883,20 @@ async function verifyTistorySessionBeforeGeneration({ runtimeRoot, form, setting
       tistorySessionCheckedAt: new Date().toISOString()
     });
     if (result.status !== "valid") {
-      safeLog(jobId, "Tistory session is not valid. Naver publishing will continue and Tistory will be skipped.", "warn");
+      safeLog(jobId, "티스토리 세션이 유효하지 않습니다. 네이버 발행은 계속 진행하고 티스토리 발행은 건너뜁니다.", "warn");
       return {
         status: "expired",
-        reason: "Tistory Kakao login is required before publishing."
+        reason: "티스토리 발행 전에 카카오 로그인이 필요합니다."
       };
     }
-    safeLog(jobId, "Tistory editor session check complete.");
+    safeLog(jobId, "티스토리 편집기 세션 확인 완료.");
     return result;
   } catch (error) {
     writeSettings(runtimeRoot, {
       tistorySessionStatus: "expired",
       tistorySessionCheckedAt: new Date().toISOString()
     });
-    safeLog(jobId, `Tistory session check failed. Naver publishing will continue and Tistory will be skipped: ${error.message}`, "warn");
+    safeLog(jobId, `티스토리 세션 확인에 실패했습니다. 네이버 발행은 계속 진행하고 티스토리 발행은 건너뜁니다: ${error.message}`, "warn");
     return {
       status: "expired",
       reason: error.message
@@ -906,7 +906,7 @@ async function verifyTistorySessionBeforeGeneration({ runtimeRoot, form, setting
 
 async function startTistoryTestPublish(form = {}) {
   if (activeJob) {
-    throw new Error("A job is already running.");
+    throw new Error("이미 실행 중인 작업이 있습니다.");
   }
 
   const runtimeRoot = getRuntimeRoot();
@@ -919,14 +919,14 @@ async function startTistoryTestPublish(form = {}) {
   const tistoryBlogId = String(form.tistoryBlogId || settings.tistoryBlogId || "").trim();
   if (!tistoryBlogId) {
     activeJob = null;
-    throw new Error("Tistory blog ID is required.");
+    throw new Error("티스토리 블로그 ID가 필요합니다.");
   }
 
   const imagePath = ensureTistoryTestImage(runtimeRoot);
   const browserProfileDir = getTistoryProfileDir(runtimeRoot, tistoryBlogId);
   const tistoryKey = tistorySessionKey(tistoryBlogId, browserProfileDir);
   const preparedTistorySession = reusableTistorySession(tistoryKey);
-  const title = `[Tistory Test] ${new Date().toISOString().slice(0, 19).replace("T", " ")}`;
+  const title = `[티스토리 테스트] ${new Date().toISOString().slice(0, 19).replace("T", " ")}`;
   const article = buildTistoryTestArticle();
   const images = [{
     role: "body",
@@ -944,13 +944,13 @@ async function startTistoryTestPublish(form = {}) {
     title,
     article,
     images,
-    imageNotes: ["Tistory-only test image was generated locally."],
+    imageNotes: ["티스토리 전용 테스트 이미지가 로컬에서 생성되었습니다."],
     tokenUsage: { total: 0 }
   });
 
   try {
-    updateStatus(jobId, "publishing", "Tistory test publishing");
-    safeLog(jobId, "Tistory-only test publish started.");
+    updateStatus(jobId, "publishing", "티스토리 테스트 발행");
+    safeLog(jobId, "티스토리 전용 테스트 발행을 시작합니다.");
     await publishToTistory({
       tistoryBlogId,
       category: String(form.category || settings.category || "").trim(),
@@ -964,7 +964,7 @@ async function startTistoryTestPublish(form = {}) {
       titleImagePath: "",
       bodyImages: [{ sequence: 1, path: imagePath }],
       breakSentencesInBody: form.breakSentencesInBody !== false,
-      tags: ["tistory-test", "automation-test"],
+      tags: ["티스토리테스트", "자동화테스트"],
       browserProfileDir,
       preparedContext: preparedTistorySession?.context,
       preparedPage: preparedTistorySession?.page,
@@ -976,16 +976,16 @@ async function startTistoryTestPublish(form = {}) {
       tistorySessionStatus: "valid",
       tistorySessionCheckedAt: new Date().toISOString()
     });
-    updateStatus(jobId, "success", "Tistory test publish complete");
-    safeLog(jobId, "Tistory-only test publish complete.");
+    updateStatus(jobId, "success", "티스토리 테스트 발행 완료");
+    safeLog(jobId, "티스토리 전용 테스트 발행 완료.");
     const payload = {
       jobId,
       status: "success",
-      reason: "Tistory-only test publish complete.",
+      reason: "티스토리 전용 테스트 발행 완료.",
       title,
       article,
       images,
-      imageNotes: ["Tistory-only test image was generated locally."],
+      imageNotes: ["티스토리 전용 테스트 이미지가 로컬에서 생성되었습니다."],
       tokenUsage: { total: 0 },
       history: readHistory(runtimeRoot)
     };
@@ -996,7 +996,7 @@ async function startTistoryTestPublish(form = {}) {
       tistorySessionStatus: error.code === "TISTORY_SESSION_EXPIRED" ? "expired" : "unknown",
       tistorySessionCheckedAt: new Date().toISOString()
     });
-    safeLog(jobId, `Tistory-only test publish failed: ${error.message}`, "error");
+    safeLog(jobId, `티스토리 전용 테스트 발행 실패: ${error.message}`, "error");
     updateStatus(jobId, "failed", error.message);
     throw error;
   } finally {
@@ -1054,7 +1054,7 @@ async function startJob(form) {
   }
   if (publishToTistoryAfterNaver && !tistoryBlogId) {
     activeJob = null;
-    throw new Error("Tistory publishing requires a blog ID.");
+    throw new Error("티스토리 발행에는 블로그 ID가 필요합니다.");
   }
   if (shouldPublish) {
     safeLog(jobId, `Naver 로그인 ID: ${naverId} / 블로그 주소 ID: ${blogId}`);
@@ -1236,10 +1236,10 @@ async function startJob(form) {
         updateAccountSession(runtimeRoot, account.id, "valid", settings);
         emitAccountStore(runtimeRoot);
       }
-      let publishReason = "Naver pending draft publishing completed.";
+      let publishReason = "네이버 보류 발행 초안 발행 완료.";
       if (pendingDraft.publishToTistoryAfterNaver && tistoryPublishReady) {
         try {
-          updateStatus(jobId, "publishing", "Tistory publishing after resumed Naver");
+          updateStatus(jobId, "publishing", "네이버 이어하기 발행 후 티스토리 발행");
           const tistoryProfileDir = getTistoryProfileDir(runtimeRoot, tistoryBlogId);
           const tistoryKey = tistorySessionKey(tistoryBlogId, tistoryProfileDir);
           preparedTistorySession = reusableTistorySession(tistoryKey);
@@ -1267,9 +1267,9 @@ async function startJob(form) {
             tistorySessionStatus: "valid",
             tistorySessionCheckedAt: new Date().toISOString()
           });
-          publishReason = "Naver pending draft and Tistory publishing completed.";
+          publishReason = "네이버 보류 발행 초안과 티스토리 발행 완료.";
         } catch (error) {
-          publishReason = `Naver pending draft publishing completed, but Tistory failed: ${error.message}`;
+          publishReason = `네이버 보류 발행 초안은 완료됐지만 티스토리 발행에 실패했습니다: ${error.message}`;
           writeSettings(runtimeRoot, {
             tistorySessionStatus: error.code === "TISTORY_SESSION_EXPIRED" ? "expired" : "unknown",
             tistorySessionCheckedAt: new Date().toISOString()
@@ -1666,7 +1666,7 @@ async function startJob(form) {
       }
       if (tistoryPublishReady) {
         try {
-          updateStatus(jobId, "publishing", "Tistory publishing after Naver");
+          updateStatus(jobId, "publishing", "네이버 발행 후 티스토리 발행");
           const tistoryProfileDir = getTistoryProfileDir(runtimeRoot, tistoryBlogId);
           const tistoryKey = tistorySessionKey(tistoryBlogId, tistoryProfileDir);
           preparedTistorySession = reusableTistorySession(tistoryKey);
@@ -1694,9 +1694,9 @@ async function startJob(form) {
             tistorySessionStatus: "valid",
             tistorySessionCheckedAt: new Date().toISOString()
           });
-          publishReason = "Naver and Tistory publishing completed.";
+          publishReason = "네이버와 티스토리 발행 완료.";
         } catch (error) {
-          publishReason = `Naver publishing completed, but Tistory failed: ${error.message}`;
+          publishReason = `네이버 발행은 완료됐지만 티스토리 발행에 실패했습니다: ${error.message}`;
           writeSettings(runtimeRoot, {
             tistorySessionStatus: error.code === "TISTORY_SESSION_EXPIRED" ? "expired" : "unknown",
             tistorySessionCheckedAt: new Date().toISOString()
@@ -1704,7 +1704,7 @@ async function startJob(form) {
           safeLog(jobId, publishReason, "warn");
         }
       } else if (publishToTistoryAfterNaver) {
-        publishReason = "Naver publishing completed. Tistory was skipped because the Tistory session is not valid.";
+        publishReason = "네이버 발행 완료. 티스토리 세션이 유효하지 않아 티스토리 발행은 건너뜁니다.";
         safeLog(jobId, publishReason, "warn");
       }
       publishStatus = "success";
@@ -2073,7 +2073,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("tistory:checkSession", async (_event, tistoryBlogId) => {
     if (activeJob) {
-      throw new Error("Cannot check Tistory session while a job is running.");
+      throw new Error("작업 실행 중에는 티스토리 세션을 확인할 수 없습니다.");
     }
     const runtimeRoot = getRuntimeRoot();
     const settings = readSettings(runtimeRoot);

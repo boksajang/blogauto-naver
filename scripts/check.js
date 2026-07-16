@@ -212,6 +212,32 @@ assertCondition(
     && sourceFiles.tistoryPublisher.content.includes("paragraphHtml(block.text, options.breakSentencesInBody !== false)"),
   "src/lib/tistoryPublisher.js: Tistory HTML body insertion must still apply sentence line breaks when enabled"
 );
+assertCondition(
+  sourceFiles.main.content.includes("티스토리 전용 테스트 발행을 시작합니다.")
+    && sourceFiles.main.content.includes("네이버 발행은 완료됐지만 티스토리 발행에 실패했습니다")
+    && sourceFiles.rendererApp.content.includes("티스토리 세션 확인 완료.")
+    && sourceFiles.tistoryPublisher.content.includes("티스토리 본문 입력 시작"),
+  "Tistory user-facing logs must be displayed in Korean"
+);
+[
+  "Tistory session check complete.",
+  "Tistory session check failed:",
+  "Tistory-only test publish",
+  "Tistory body writing start",
+  "Tistory publish complete",
+  "Tistory blog ID is required."
+].forEach((englishTistoryLog) => {
+  assertCondition(
+    !sourceFiles.main.content.includes(englishTistoryLog)
+      && !sourceFiles.rendererApp.content.includes(englishTistoryLog)
+      && !sourceFiles.tistoryPublisher.content.includes(englishTistoryLog),
+    `Tistory user-facing logs must not include English text: ${englishTistoryLog}`
+  );
+});
+assertCondition(
+  sourceFiles.rendererStyles.content.includes("grid-template-rows: minmax(0, 0.61fr) minmax(0, 0.52fr) minmax(0, 1.15fr) minmax(0, 0.55fr);"),
+  "src/renderer/styles.css: Main Agent log row share must shrink and Research/Title log row share must grow"
+);
 
 const naverBlogSearchTemplate = "https://search.naver.com/search.naver?ssc=tab.blog.all&sm=tab_jum&query={query}";
 const naverNewsSearchTemplate = "https://search.naver.com/search.naver?ssc=tab.news.all&where=news&sm=tab_jum&query={query}";

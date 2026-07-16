@@ -5,7 +5,7 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-function sessionExpiredError(message = "Tistory session requires Kakao login.") {
+function sessionExpiredError(message = "티스토리 세션에 카카오 로그인이 필요합니다.") {
   const error = new Error(message);
   error.code = "TISTORY_SESSION_EXPIRED";
   return error;
@@ -20,13 +20,13 @@ function tistoryBlogId(options = {}) {
 
 function newPostUrlFor(options = {}) {
   const blogId = tistoryBlogId(options);
-  if (!blogId) throw new Error("Tistory blog ID is required.");
+  if (!blogId) throw new Error("티스토리 블로그 ID가 필요합니다.");
   return `https://${encodeURIComponent(blogId)}.tistory.com/manage/newpost`;
 }
 
 function postsUrlFor(options = {}) {
   const blogId = tistoryBlogId(options);
-  if (!blogId) throw new Error("Tistory blog ID is required.");
+  if (!blogId) throw new Error("티스토리 블로그 ID가 필요합니다.");
   return `https://${encodeURIComponent(blogId)}.tistory.com/manage/posts/`;
 }
 
@@ -95,7 +95,7 @@ async function findVisibleLocator(pageOrFrame, selectors, timeout = 20000) {
     }
     await sleep(250);
   }
-  throw new Error(`Visible Tistory element was not found: ${selectorList.join(", ")}`);
+  throw new Error(`화면에 표시된 티스토리 요소를 찾지 못했습니다: ${selectorList.join(", ")}`);
 }
 
 async function safeClickLocator(locator) {
@@ -109,7 +109,7 @@ async function getEditorFrame(page, timeout = 30000) {
   await body.waitFor({ state: "visible", timeout });
   const handle = await page.locator("#editor-tistory_ifr").elementHandle({ timeout });
   const frame = await handle.contentFrame();
-  if (!frame) throw new Error("Tistory editor iframe is not available.");
+  if (!frame) throw new Error("티스토리 본문 편집기 iframe을 찾을 수 없습니다.");
   return frame;
 }
 
@@ -124,9 +124,9 @@ async function completeLoginIfNeeded(page, options, log) {
   const kakaoButton = page.locator(".link_kakao_id, a:has-text('카카오계정으로 로그인')").first();
   if (await kakaoButton.isVisible({ timeout: 3000 }).catch(() => false)) {
     if (options.failOnLoginRequired === true) {
-      throw sessionExpiredError("Tistory Kakao login is required.");
+      throw sessionExpiredError("티스토리 카카오 로그인이 필요합니다.");
     }
-    log("Tistory Kakao login is required. Please complete account selection or security verification in the opened browser.", "warn");
+    log("티스토리 카카오 로그인이 필요합니다. 열린 브라우저에서 계정 선택 또는 보안 확인을 완료해 주세요.", "warn");
     await safeClickLocator(kakaoButton);
   }
 
@@ -135,7 +135,7 @@ async function completeLoginIfNeeded(page, options, log) {
     if (await hasEditorReady(page)) return true;
     await sleep(1000);
   }
-  throw sessionExpiredError("Tistory login was not completed within the allowed time.");
+  throw sessionExpiredError("제한 시간 안에 티스토리 로그인이 완료되지 않았습니다.");
 }
 
 async function prepareTistoryNewPost(options = {}) {
@@ -143,7 +143,7 @@ async function prepareTistoryNewPost(options = {}) {
   try {
     ({ chromium } = require("playwright-core"));
   } catch {
-    throw new Error("playwright-core is required for Tistory browser automation.");
+    throw new Error("티스토리 브라우저 자동화를 실행하려면 playwright-core가 필요합니다.");
   }
   const log = options.log || (() => {});
   const browserProfileDir = options.browserProfileDir
@@ -157,7 +157,7 @@ async function prepareTistoryNewPost(options = {}) {
   }));
   let page = activePage(context, null) || await context.newPage();
   const newPostUrl = newPostUrlFor(options);
-  log(`Tistory editor target URL: ${newPostUrl}`);
+  log(`티스토리 글쓰기 목표 URL: ${newPostUrl}`);
   page = await gotoResilient(page, newPostUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
   await completeLoginIfNeeded(page, options, log);
   await page.locator("#post-title-inp").waitFor({ state: "visible", timeout: 60000 });
@@ -220,7 +220,7 @@ async function chooseQuoteStyle(page, styleNumber, log) {
   await safeClickLocator(button);
   const option = await findVisibleLocator(page, styleSelectors, 8000).catch(() => null);
   if (!option) {
-    log(`Tistory quote style ${styleNumber} was not found. Falling back to normal paragraph.`, "warn");
+    log(`티스토리 인용 스타일 ${styleNumber}을 찾지 못해 일반 문단으로 입력합니다.`, "warn");
     await page.keyboard.press("Escape").catch(() => {});
     return false;
   }
@@ -236,7 +236,7 @@ async function insertQuoteBlock(page, text, styleNumber, log) {
   await page.keyboard.press("End").catch(() => {});
   await page.keyboard.press("Enter").catch(() => {});
   await page.keyboard.press("Enter").catch(() => {});
-  if (!styled) log("Tistory quote fallback input completed.", "warn");
+  if (!styled) log("티스토리 인용구 대체 입력을 완료했습니다.", "warn");
 }
 
 function escapeHtml(value) {
@@ -272,7 +272,7 @@ async function insertEditorHtml(page, html) {
   const frame = await getEditorFrame(page);
   await frame.evaluate((insertHtml) => {
     const body = document.querySelector("body#tinymce");
-    if (!body) throw new Error("Tistory editor body is not available.");
+    if (!body) throw new Error("티스토리 본문 편집 영역을 찾을 수 없습니다.");
     const isEmpty = !body.textContent.trim() && body.querySelectorAll("figure,img").length === 0;
     if (isEmpty) body.innerHTML = "";
     body.insertAdjacentHTML("beforeend", insertHtml);
@@ -336,7 +336,7 @@ async function insertImageByButton(page, filePath) {
     if (await fileInput.count().catch(() => 0)) {
       await fileInput.setInputFiles(filePath, { timeout: 5000 });
     } else {
-      throw new Error("Tistory image file input was not opened.");
+      throw new Error("티스토리 이미지 파일 선택창이 열리지 않았습니다.");
     }
   }
   await sleep(2000);
@@ -344,7 +344,7 @@ async function insertImageByButton(page, filePath) {
 
 async function insertArticleWithImages(page, article, bodyImages, options, log) {
   const blocks = splitArticleBlocks(article);
-  log("Tistory body writing start");
+  log("티스토리 본문 입력 시작");
   await insertStructuredQuoteBlock(page, options.title || "", 1);
   if (options.titleImagePath) {
     await focusEditorBody(page);
@@ -363,14 +363,14 @@ async function insertArticleWithImages(page, article, bodyImages, options, log) 
     }
     const image = (bodyImages || []).find((item) => Number(item.sequence) === block.sequence);
     if (!image?.path) {
-      log(`Tistory body image ${block.sequence} file is missing. Skipping.`, "warn");
+      log(`티스토리 본문 이미지 ${block.sequence} 파일이 없어 건너뜁니다.`, "warn");
       continue;
     }
     await focusEditorBody(page);
     await insertImageByButton(page, image.path);
     await insertEditorHtml(page, '<p data-ke-size="size16"><br></p>');
   }
-  log("Tistory body writing complete");
+  log("티스토리 본문 입력 완료");
 }
 
 function sanitizeTistoryTag(value) {
@@ -407,12 +407,12 @@ async function inputTistoryTags(page, tags, log) {
   for (const tag of cleanTags) {
     const activeInput = await findVisibleLocator(page, TISTORY_TAG_INPUT_SELECTORS, 3000).catch(() => null);
     if (!activeInput) {
-      log(`Tistory tag input is no longer available after ${enteredCount} tags.`, "warn");
+      log(`티스토리 태그 ${enteredCount}개 입력 후 태그 입력칸을 더 이상 찾을 수 없습니다.`, "warn");
       break;
     }
     await safeClickLocator(activeInput);
     const typed = await activeInput.type(tag, { delay: 10, timeout: 5000 }).then(() => true).catch((error) => {
-      log(`Tistory tag input stopped at ${enteredCount}/${cleanTags.length}: ${error.message}`, "warn");
+      log(`티스토리 태그 입력이 ${enteredCount}/${cleanTags.length}에서 중단되었습니다: ${error.message}`, "warn");
       return false;
     });
     if (!typed) break;
@@ -435,7 +435,7 @@ async function inputTistoryTags(page, tags, log) {
     }).catch(() => {});
   }
   await page.waitForTimeout(500).catch(() => {});
-  log(`Tistory tags input complete: ${enteredCount}/${cleanTags.length}`);
+  log(`티스토리 태그 입력 완료: ${enteredCount}/${cleanTags.length}`);
 }
 
 function normalizeCategoryText(value) {
@@ -458,11 +458,11 @@ async function selectCategory(page, category, log) {
     const normalized = normalizeCategoryText(label);
     if (normalized === target || target.includes(normalized) || normalized.includes(target)) {
       await safeClickLocator(option);
-      log(`Tistory category selected: ${label}`);
+      log(`티스토리 카테고리 선택 완료: ${label}`);
       return true;
     }
   }
-  log(`Tistory category was not found: ${category}`, "warn");
+  log(`티스토리 카테고리를 찾지 못했습니다: ${category}`, "warn");
   await page.keyboard.press("Escape").catch(() => {});
   return false;
 }
@@ -491,14 +491,14 @@ async function applyPublishSchedule(page, options, log) {
   const reserveAt = new Date(Date.now() + Math.max(1, Number(options.reserveAfterHours || 3)) * 60 * 60 * 1000);
   const hour = String(reserveAt.getHours());
   const minute = String(Math.floor(reserveAt.getMinutes() / 10) * 10);
-  await page.locator("#dateHour").fill(hour).catch(() => log("Tistory reserve hour input was not found.", "warn"));
-  await page.locator("#dateMinute").fill(minute).catch(() => log("Tistory reserve minute input was not found.", "warn"));
+  await page.locator("#dateHour").fill(hour).catch(() => log("티스토리 예약 시간 입력칸을 찾지 못했습니다.", "warn"));
+  await page.locator("#dateMinute").fill(minute).catch(() => log("티스토리 예약 분 입력칸을 찾지 못했습니다.", "warn"));
 }
 
 async function clickFinalPublish(page, options, log) {
   const finalButton = await findVisibleLocator(page, "#publish-btn", 15000);
   const text = await finalButton.innerText({ timeout: 1000 }).catch(() => "");
-  log(`Tistory final publish button: ${text || "publish"}`);
+  log(`티스토리 최종 발행 버튼 확인: ${text || "발행"}`);
   await safeClickLocator(finalButton);
   const blogId = tistoryBlogId(options);
   await page.waitForURL((url) => {
@@ -541,7 +541,7 @@ async function publishToTistory(options = {}) {
     await applyPublishVisibility(page, options);
     await applyPublishSchedule(page, options, log);
     await clickFinalPublish(page, options, log);
-    log("Tistory publish complete");
+    log("티스토리 발행 완료");
   } finally {
     if (ownsContext) await context.close().catch(() => {});
   }

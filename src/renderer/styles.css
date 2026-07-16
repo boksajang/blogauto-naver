@@ -216,7 +216,7 @@ h2 {
   flex: 1 1 auto;
   display: grid;
   grid-template-columns: minmax(390px, 450px) minmax(420px, 1fr) minmax(300px, 0.78fr);
-  grid-template-rows: minmax(0, 0.92fr) minmax(0, 0.78fr) minmax(0, 0.58fr) minmax(0, 0.55fr);
+  grid-template-rows: minmax(0, 0.61fr) minmax(0, 0.52fr) minmax(0, 1.15fr) minmax(0, 0.55fr);
   grid-template-areas:
     "input preview main"
     "input image main"
