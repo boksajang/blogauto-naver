@@ -1418,6 +1418,7 @@ async function startAutoPublishing(startTargetKey = "") {
     }
     clearPendingAutoTarget(autoTargetKey(target));
     let autoAttemptLimit = AUTO_TARGET_MAX_ATTEMPTS;
+    let skipDelayBeforeNextTarget = false;
     const excludedKeywordLanes = new Set();
     for (let attempt = 1; attempt <= autoAttemptLimit && state.autoRunning; attempt += 1) {
       addLog({
@@ -1503,9 +1504,10 @@ async function startAutoPublishing(startTargetKey = "") {
         message: `자동 Cycle ${autoAttemptLimit}회 실패로 다음 대상으로 이동합니다: ${autoResultReason(result)}`,
         at: new Date().toISOString()
       });
+      skipDelayBeforeNextTarget = true;
     }
     index += 1;
-    if (state.autoRunning) {
+    if (state.autoRunning && !skipDelayBeforeNextTarget) {
       await delayAuto(Number($("#repeatTermMinutes").value || 60));
     }
   }

@@ -805,6 +805,13 @@ if (
   console.error("auto retry must exclude failed keyword lanes within the same target retry cycle");
 }
 if (
+  !sourceFiles.rendererApp.content.includes("skipDelayBeforeNextTarget = true")
+  || !sourceFiles.rendererApp.content.includes("state.autoRunning && !skipDelayBeforeNextTarget")
+) {
+  failed = true;
+  console.error("auto publishing must skip repeat-term delay after exhausting attempts for a failed category");
+}
+if (
   searchCallback
   && (!searchCallback.content.includes("normalizeResearchLaneResult(researchResult, keywordLanePlan)")
     || !sourceFiles.main.content.includes("function buildResearchIntentSearchQueries")
