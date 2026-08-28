@@ -576,6 +576,8 @@ function renderHistory(history) {
       ["근거 요약", item.source_summary],
       ["사유", item.reason]
     ].filter(([, value]) => String(value || "").trim());
+    const canRepublish = !["success", "generated"].includes(String(item.status || ""))
+      && String(item.id || "").trim();
 
     card.innerHTML = `
       <div class="history-card-top">
@@ -586,6 +588,16 @@ function renderHistory(history) {
       <h3>${escapeHtml(title)}</h3>
       <p class="history-meta">${escapeHtml(meta || "작업 대상 정보 없음")}</p>
       <p class="history-reason">${escapeHtml(item.reason || item.source_summary || "기록된 사유가 없습니다.")}</p>
+      ${canRepublish ? `
+        <div class="history-card-actions">
+          <button
+            type="button"
+            class="primary small"
+            data-action="republish-history"
+            data-history-id="${escapeHtml(item.id)}"
+          >다시 발행</button>
+        </div>
+      ` : ""}
       <details class="history-details">
         <summary>상세 보기</summary>
         <dl>
@@ -600,6 +612,55 @@ function renderHistory(history) {
     `;
     body.appendChild(card);
   }
+}
+
+function bindHistoryActions() {
+  const body = $("#historyBody");
+  if (!body || body.dataset.actionsBound === "true") return;
+  body.dataset.actionsBound = "true";
+  body.addEventListener("click", async (event) => {
+    const button = event.target?.closest?.("[data-action='republish-history']");
+    if (!button) return;
+    if (state.running || state.autoRunning) {
+      const message = "현재 실행 중인 작업을 먼저 완료하거나 중지한 뒤 다시 발행해 주세요.";
+      setRunState("failed", "재발행 대기");
+      addLog({ level: "warn", message, at: new Date().toISOString() });
+      window.alert(message);
+      return;
+    }
+
+    const historyId = String(button.dataset.historyId || "").trim();
+    if (!historyId) {
+      window.alert("재발행할 작업 ID를 찾을 수 없습니다.");
+      return;
+    }
+    if (!window.confirm("저장된 제목, 본문, 이미지를 사용해 Naver에 다시 발행할까요?")) return;
+
+    state.running = true;
+    button.disabled = true;
+    $("#startButton").disabled = true;
+    setTistoryTestButtonDisabled(true);
+    setRunState("publishing", "재발행 준비");
+    addLog({
+      level: "info",
+      message: "작업 이력에서 선택한 글의 재발행을 시작합니다.",
+      at: new Date().toISOString()
+    });
+    try {
+      const result = await window.blogAuto.republishHistory(historyId);
+      renderHistory(result.history || await window.blogAuto.loadHistory());
+      if (result.status !== "success") {
+        throw new Error(result.reason || "재발행에 실패했습니다.");
+      }
+    } catch (error) {
+      setRunState("failed", "재발행 실패");
+      addLog({ level: "error", message: error.message, at: new Date().toISOString() });
+    } finally {
+      state.running = false;
+      $("#startButton").disabled = false;
+      setTistoryTestButtonDisabled(false);
+    }
+  });
 }
 
 function renderHistorySummary(items) {
@@ -1647,6 +1708,7 @@ async function boot() {
   const account = selectedAccount();
   if (account) selectAccount(account.id);
   renderHistory(initial.history || []);
+  bindHistoryActions();
 
   window.blogAuto.onAccountsUpdate((store) => {
     state.accountStore = store;

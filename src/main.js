@@ -1836,6 +1836,199 @@ async function startJob(form) {
   }
 }
 
+function resolveRepublishSource(runtimeRoot, historyEntry) {
+  const sourceJobId = String(historyEntry?.source_job_id || historyEntry?.id || "").trim();
+  if (!/^job_[a-zA-Z0-9_-]+$/.test(sourceJobId)) {
+    throw new Error("이 작업 이력에는 재발행 가능한 원본 작업 ID가 없습니다.");
+  }
+  const jobsRoot = path.resolve(runtimeRoot, "jobs");
+  const jobDir = path.resolve(jobsRoot, sourceJobId);
+  if (!jobDir.startsWith(`${jobsRoot}${path.sep}`)) {
+    throw new Error("재발행 원본 작업 경로가 올바르지 않습니다.");
+  }
+  const resultPath = path.join(jobDir, "agent-result.json");
+  if (!fs.existsSync(resultPath)) {
+    throw new Error("이 작업의 저장된 생성 결과를 찾을 수 없어 재발행할 수 없습니다.");
+  }
+  return { sourceJobId, jobDir, resultPath };
+}
+
+async function republishHistoryEntry(historyId) {
+  if (activeJob) {
+    throw new Error("이미 실행 중인 작업이 있습니다.");
+  }
+
+  const runtimeRoot = getRuntimeRoot();
+  const history = readHistory(runtimeRoot);
+  const historyEntry = history.find((item) => String(item.id || "") === String(historyId || ""));
+  if (!historyEntry) {
+    throw new Error("선택한 작업 이력을 찾을 수 없습니다.");
+  }
+  if (["success", "generated"].includes(String(historyEntry.status || ""))) {
+    throw new Error("성공 또는 생성 완료 작업은 확인 필요 항목이 아니므로 재발행할 수 없습니다.");
+  }
+
+  const settings = readSettings(runtimeRoot);
+  const accountStore = readAccountStore(runtimeRoot, settings);
+  const account = accountStore.accounts.find((item) => item.id === historyEntry.account_id)
+    || accountStore.accounts.find((item) => String(item.blogId || item.naverId || "") === String(historyEntry.blog_id || ""));
+  if (!account) {
+    throw new Error("이 작업에 사용된 Naver 계정을 현재 계정 목록에서 찾을 수 없습니다.");
+  }
+
+  const { sourceJobId, jobDir, resultPath } = resolveRepublishSource(runtimeRoot, historyEntry);
+  const category = String(historyEntry.category || settings.category || "").trim();
+  const topic = String(historyEntry.topic || "").trim();
+  const keyword = String(historyEntry.keyword || "").trim();
+  const blogId = String(historyEntry.blog_id || account.blogId || account.naverId || "").trim();
+  if (!category) throw new Error("재발행할 작업의 카테고리 정보가 없습니다.");
+  if (!blogId || !account.naverId) throw new Error("재발행할 작업의 Naver 계정 정보가 없습니다.");
+
+  const rawResult = JSON.parse(fs.readFileSync(resultPath, "utf8"));
+  const agentResult = normalizeAgentResult({
+    runtimeRoot,
+    jobDir,
+    topic,
+    keyword,
+    includeTitleImage: settings.includeTitleImage !== false,
+    maxBodyImages: normalizeMaxBodyImages(settings.maxBodyImages),
+    currentDateLabel: todayLabel(),
+    result: rawResult
+  });
+  if (!agentResult.title || !agentResult.article) {
+    throw new Error("저장된 작업에 재발행할 제목 또는 본문이 없습니다.");
+  }
+
+  const jobId = `republish_${Date.now()}`;
+  const browserProfileDir = getAccountProfileDir(runtimeRoot, account);
+  const tags = buildTags(topic, keyword, agentResult.tags);
+  const publishVisibility = String(settings.publishVisibility || (settings.publishPrivate === false ? "public" : "private"));
+  const publishPrivate = publishVisibility !== "public";
+  activeJob = { id: jobId, cancelled: false };
+
+  try {
+    safeLog(jobId, `작업 이력 재발행 시작: ${agentResult.title}`);
+    emit("job:preview", {
+      jobId,
+      title: agentResult.title,
+      article: agentResult.article,
+      images: getPreviewImages(agentResult),
+      imageNotes: agentResult.imageWarnings || [],
+      tokenUsage: { total: 0 },
+      tags
+    });
+    const preparedSession = await verifyPublishSessionBeforeGeneration({
+      runtimeRoot,
+      account,
+      blogId,
+      form: {
+        naverId: account.naverId,
+        naverPassword: account.naverPassword || "",
+        naverEditorDomNotes: settings.naverEditorDomNotes || ""
+      },
+      settings,
+      jobId
+    });
+
+    updateStatus(jobId, "publishing", "작업 이력 Naver 재발행");
+    await publishToNaver({
+      accountId: account.id || "",
+      naverId: account.naverId,
+      blogId,
+      naverPassword: account.naverPassword || "",
+      category,
+      publishPrivate,
+      publishVisibility,
+      publishScheduleMode: settings.publishScheduleMode || "now",
+      reserveAfterHours: Number(settings.reserveAfterHours || 0),
+      failOnLoginRequired: false,
+      title: agentResult.title,
+      article: agentResult.article,
+      titleImagePath: agentResult.titleImagePath,
+      bodyImages: agentResult.bodyImages,
+      breakSentencesInBody: settings.breakSentencesInBody !== false,
+      tags,
+      domNotes: settings.naverEditorDomNotes || "",
+      browserProfileDir,
+      preparedContext: preparedSession?.context,
+      preparedPage: preparedSession?.page,
+      log: (message, level) => safeLog(jobId, message, level)
+    });
+
+    updateAccountSession(runtimeRoot, account.id, "valid", settings);
+    emitAccountStore(runtimeRoot);
+    appendHistory(runtimeRoot, {
+      id: jobId,
+      source_job_id: sourceJobId,
+      republished_from: historyEntry.id,
+      create_at: new Date().toISOString(),
+      account_id: account.id || "",
+      blog_id: blogId,
+      title: agentResult.title,
+      topic,
+      keyword,
+      category,
+      status: "success",
+      embedding_model: "local-hash-v1",
+      embedding: createEmbedding(agentResult.title),
+      token_total: 0,
+      reason: "작업 이력에서 저장된 생성 결과를 Naver에 다시 발행했습니다."
+    });
+    updateStatus(jobId, "success", "재발행 완료");
+    safeLog(jobId, "작업 이력 Naver 재발행 완료");
+    const payload = {
+      jobId,
+      status: "success",
+      title: agentResult.title,
+      article: agentResult.article,
+      images: getPreviewImages(agentResult),
+      imageNotes: agentResult.imageWarnings || [],
+      tokenUsage: { total: 0 },
+      tags,
+      history: readHistory(runtimeRoot)
+    };
+    emit("job:complete", payload);
+    return payload;
+  } catch (error) {
+    const failedStatus = error.code === "SESSION_EXPIRED" ? "session_expired" : "failed";
+    appendHistory(runtimeRoot, {
+      id: jobId,
+      source_job_id: sourceJobId,
+      republished_from: historyEntry.id,
+      create_at: new Date().toISOString(),
+      account_id: account.id || "",
+      blog_id: blogId,
+      title: agentResult.title,
+      topic,
+      keyword,
+      category,
+      status: failedStatus,
+      embedding_model: "local-hash-v1",
+      embedding: createEmbedding(agentResult.title),
+      token_total: 0,
+      reason: `작업 이력 재발행 실패: ${error.message}`
+    });
+    safeLog(jobId, error.message, "error");
+    updateStatus(jobId, failedStatus, error.message);
+    const payload = {
+      jobId,
+      status: failedStatus,
+      reason: error.message,
+      title: agentResult.title,
+      article: agentResult.article,
+      images: getPreviewImages(agentResult),
+      imageNotes: agentResult.imageWarnings || [],
+      tokenUsage: { total: 0 },
+      tags,
+      history: readHistory(runtimeRoot)
+    };
+    emit("job:complete", payload);
+    return payload;
+  } finally {
+    activeJob = null;
+  }
+}
+
 app.whenReady().then(() => {
   ensureRuntimeFiles(getRuntimeRoot());
   ensureSettingsFile(getRuntimeRoot());
@@ -2117,6 +2310,7 @@ app.whenReady().then(() => {
   });
   ipcMain.handle("tistory:testPublish", (_event, form) => startTistoryTestPublish(form));
   ipcMain.handle("history:load", () => readHistory(getRuntimeRoot()));
+  ipcMain.handle("history:republish", (_event, historyId) => republishHistoryEntry(historyId));
   ipcMain.handle("job:start", (_event, form) => startJob(form));
   ipcMain.handle("runtime:open", () => shell.openPath(getRuntimeRoot()));
   ipcMain.handle("file:open", (_event, filePath) => {

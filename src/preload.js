@@ -12,6 +12,7 @@ contextBridge.exposeInMainWorld("blogAuto", {
   checkTistorySession: (tistoryBlogId) => ipcRenderer.invoke("tistory:checkSession", tistoryBlogId),
   testTistoryPublish: (form) => ipcRenderer.invoke("tistory:testPublish", form),
   loadHistory: () => ipcRenderer.invoke("history:load"),
+  republishHistory: (historyId) => ipcRenderer.invoke("history:republish", historyId),
   startJob: (form) => ipcRenderer.invoke("job:start", form),
   openRuntimeFolder: () => ipcRenderer.invoke("runtime:open"),
   openFile: (filePath) => ipcRenderer.invoke("file:open", filePath),

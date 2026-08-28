@@ -463,6 +463,12 @@ h2 {
   -webkit-box-orient: vertical;
 }
 
+.history-card-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
 .history-details {
   margin-top: 6px;
 }
