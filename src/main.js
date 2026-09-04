@@ -1149,6 +1149,11 @@ async function startJob(form) {
     inputTokens: 0,
     cachedInputTokens: 0,
     outputTokens: 0,
+    promptCharacters: 0,
+    estimatedPromptTokens: 0,
+    agents: {},
+    grossAgents: {},
+    promptCharactersByAgent: {},
     rateLimits: null
   };
   writeSettings(runtimeRoot, {
@@ -1438,12 +1443,28 @@ async function startJob(form) {
             safeLog(jobId, `선택 키워드 lane: ${latestLaneResult.topicLane}`, "info", "research");
           }
         },
+        onFinalTitleCandidate: (selectedTitle) => {
+          const titleEmbedding = createEmbedding(selectedTitle);
+          let similarity = 0;
+          for (const item of titleHistory) {
+            similarity = Math.max(similarity, cosineSimilarity(titleEmbedding, item.embedding));
+          }
+          return {
+            duplicate: similarity >= 0.75,
+            similarity,
+            reason: similarity >= 0.75
+              ? `기존 제목과 cosine similarity ${similarity.toFixed(3)}`
+              : ""
+          };
+        },
         onTokenUsage: (usage) => {
           jobTokenUsage.total = Number(usage.total || 0);
           jobTokenUsage.grossTotal = Number(usage.grossTotal || jobTokenUsage.grossTotal || 0);
           jobTokenUsage.inputTokens = Number(usage.inputTokens || 0);
           jobTokenUsage.cachedInputTokens = Number(usage.cachedInputTokens || 0);
           jobTokenUsage.outputTokens = Number(usage.outputTokens || 0);
+          jobTokenUsage.promptCharacters = Number(usage.promptCharacters || jobTokenUsage.promptCharacters || 0);
+          jobTokenUsage.estimatedPromptTokens = Number(usage.estimatedPromptTokens || jobTokenUsage.estimatedPromptTokens || 0);
           if (usage.rateLimits) {
             jobTokenUsage.rateLimits = usage.rateLimits;
           }
@@ -1454,6 +1475,8 @@ async function startJob(form) {
             inputTokens: jobTokenUsage.inputTokens,
             cachedInputTokens: jobTokenUsage.cachedInputTokens,
             outputTokens: jobTokenUsage.outputTokens,
+            promptCharacters: jobTokenUsage.promptCharacters,
+            estimatedPromptTokens: jobTokenUsage.estimatedPromptTokens,
             rateLimits: jobTokenUsage.rateLimits,
             agent: usage.agent || "",
             agentTotal: Number(usage.agentTotal || 0),
@@ -1548,11 +1571,61 @@ async function startJob(form) {
       jobTokenUsage.inputTokens = Number(codexResult.tokenUsage.inputTokens || 0);
       jobTokenUsage.cachedInputTokens = Number(codexResult.tokenUsage.cachedInputTokens || 0);
       jobTokenUsage.outputTokens = Number(codexResult.tokenUsage.outputTokens || 0);
+      jobTokenUsage.promptCharacters = Number(codexResult.tokenUsage.promptCharacters || 0);
+      jobTokenUsage.estimatedPromptTokens = Number(codexResult.tokenUsage.estimatedPromptTokens || 0);
+      jobTokenUsage.agents = codexResult.tokenUsage.agents || {};
+      jobTokenUsage.grossAgents = codexResult.tokenUsage.grossAgents || {};
+      jobTokenUsage.promptCharactersByAgent = codexResult.tokenUsage.promptCharactersByAgent || {};
     }
     if (codexResult.tokenUsage?.rateLimits) {
       jobTokenUsage.rateLimits = codexResult.tokenUsage.rateLimits;
     }
     persistCodexRateLimits(runtimeRoot, jobTokenUsage.rateLimits);
+    if (String(codexResult.status || "").toLowerCase() === "duplicate_retry") {
+      const duplicateTitle = String(codexResult.title || codexResult.researchTitleResult?.finalTitle || "").trim();
+      const duplicateEmbedding = createEmbedding(duplicateTitle);
+      const duplicateSimilarity = Number(codexResult.duplicateSimilarity || 0);
+      const duplicateEntry = {
+        id: jobId,
+        create_at: new Date().toISOString(),
+        account_id: account.id || "",
+        blog_id: blogId,
+        title: duplicateTitle,
+        topic,
+        keyword,
+        category,
+        ...keywordLaneHistoryFields(latestLaneResult),
+        status: "duplicate_retry",
+        harness_version: "lean-agent-v1",
+        final_verdict: "REVISION",
+        failure_phase: "title_duplicate",
+        research_title: duplicateTitle,
+        embedding_model: "local-hash-v1",
+        embedding: duplicateEmbedding,
+        token_total: jobTokenUsage.total,
+        token_gross_total: jobTokenUsage.grossTotal,
+        token_input: jobTokenUsage.inputTokens,
+        token_cached_input: jobTokenUsage.cachedInputTokens,
+        token_output: jobTokenUsage.outputTokens,
+        prompt_characters: jobTokenUsage.promptCharacters,
+        token_agents: jobTokenUsage.agents,
+        reason: codexResult.failureReason || `기존 제목과 cosine similarity ${duplicateSimilarity.toFixed(3)}`
+      };
+      appendHistory(runtimeRoot, duplicateEntry);
+      safeLog(jobId, `${duplicateEntry.reason} — 본문·검수·이미지 생성을 생략했습니다.`, "warn");
+      updateStatus(jobId, "duplicate_retry", "유사 제목으로 조기 중단");
+      emit("job:complete", {
+        ...nonSensitiveJob,
+        status: "duplicate_retry",
+        title: duplicateTitle,
+        article: "",
+        images: [],
+        imageNotes: [],
+        tokenUsage: jobTokenUsage,
+        history: readHistory(runtimeRoot)
+      });
+      return { status: "duplicate_retry", keywordLane: keywordLaneResultPayload(latestLaneResult) };
+    }
     const sourceFailureReason = detectCodexSourceFailure(codexResult);
     if (sourceFailureReason) {
       latestResearchTitleResult = codexResult.researchTitleResult || latestResearchTitleResult;
@@ -1606,6 +1679,12 @@ async function startJob(form) {
         embedding_model: "local-hash-v1",
         embedding,
         token_total: jobTokenUsage.total,
+        token_gross_total: jobTokenUsage.grossTotal,
+        token_input: jobTokenUsage.inputTokens,
+        token_cached_input: jobTokenUsage.cachedInputTokens,
+        token_output: jobTokenUsage.outputTokens,
+        prompt_characters: jobTokenUsage.promptCharacters,
+        token_agents: jobTokenUsage.agents,
         reason: `기존 제목과 cosine similarity ${maxSimilarity.toFixed(3)}`
       };
       appendHistory(runtimeRoot, duplicateEntry);
@@ -1739,6 +1818,12 @@ async function startJob(form) {
       embedding_model: "local-hash-v1",
       embedding,
       token_total: jobTokenUsage.total,
+      token_gross_total: jobTokenUsage.grossTotal,
+      token_input: jobTokenUsage.inputTokens,
+      token_cached_input: jobTokenUsage.cachedInputTokens,
+      token_output: jobTokenUsage.outputTokens,
+      prompt_characters: jobTokenUsage.promptCharacters,
+      token_agents: jobTokenUsage.agents,
       reason: publishReason
     };
     appendHistory(runtimeRoot, entry);
@@ -1808,6 +1893,12 @@ async function startJob(form) {
       embedding_model: "local-hash-v1",
       embedding,
       token_total: jobTokenUsage.total,
+      token_gross_total: jobTokenUsage.grossTotal,
+      token_input: jobTokenUsage.inputTokens,
+      token_cached_input: jobTokenUsage.cachedInputTokens,
+      token_output: jobTokenUsage.outputTokens,
+      prompt_characters: jobTokenUsage.promptCharacters,
+      token_agents: jobTokenUsage.agents,
       failure_phase: error.failurePhase || "",
       research_title: latestResearchTitleResult?.finalTitle || latestResearchTitleResult?.selectedTitle || "",
       reason: error.message

@@ -137,6 +137,103 @@ if (!/검증되지 않았습니다/.test(unverifiedImageWorkerIssue)) {
   console.error("src/lib/codexRunner.js: unverified section image must fail the Image Worker contract");
 }
 
+const tokenAuditResearchResult = {
+  status: "PASS",
+  finalTitle: "테스트 제목",
+  topicThesis: "테스트 논지",
+  searchNeed: "normal",
+  confirmedFacts: ["확정 사실"],
+  uncertainItems: ["변동 항목"],
+  usableSources: [{ sourceId: "S1", title: "공식 자료", url: "https://example.com", reason: "직접 근거" }],
+  writerContract: {
+    articleMission: "독자의 질문에 답한다",
+    selectedTitle: "테스트 제목",
+    topicThesis: "테스트 논지",
+    mustAnswer: ["핵심 질문"],
+    mustCover: ["핵심 내용"],
+    confirmedFacts: ["확정 사실"]
+  },
+  titleCandidates: [{ title: "전달할 필요 없는 후보", reason: "후보", risk: "" }],
+  tokenUsage: { total: 999999 }
+};
+const compactResearch = imageContractPrivate.compactResearchHandoffForPrompt(tokenAuditResearchResult);
+if (Object.prototype.hasOwnProperty.call(compactResearch, "writerContract") || Object.prototype.hasOwnProperty.call(compactResearch, "tokenUsage") || Object.prototype.hasOwnProperty.call(compactResearch, "titleCandidates")) {
+  failed = true;
+  console.error("src/lib/codexRunner.js: downstream compact research handoff must omit duplicate contracts, token telemetry, and discarded title candidates");
+}
+const tokenAuditOptions = {
+  topic: "테스트 제목",
+  keyword: "테스트",
+  category: "테스트",
+  topicMode: "manual",
+  jobDir: path.join(root, "runtime", "jobs", "token-audit-check"),
+  runtimeRoot: path.join(root, "runtime"),
+  currentDateLabel: "2026년 9월 4일",
+  includeTitleImage: true,
+  maxBodyImages: 10,
+  researchTitleResult: tokenAuditResearchResult,
+  sourceQuality: { status: "usable" },
+  searchResults: [{ title: "UNUSED_SEARCH_SENTINEL", url: "https://example.com/search", excerpt: "검색 결과" }],
+  historyTitles: ["UNUSED_HISTORY_SENTINEL"],
+  writerRevisionFeedback: "첫 문단을 독자 관점으로 고쳐라",
+  writerAttempt: 2,
+  maxWriterAttempts: 2
+};
+const compactWriterRetryPrompt = imageContractPrivate.buildWriterRetryPrompt(tokenAuditOptions, validSectionImageWriterResult);
+if (compactWriterRetryPrompt.includes("UNUSED_SEARCH_SENTINEL") || compactWriterRetryPrompt.includes("UNUSED_HISTORY_SENTINEL")) {
+  failed = true;
+  console.error("src/lib/codexRunner.js: Writer retry prompt must not resend search candidates or title history");
+}
+const compactResearchRetryPrompt = imageContractPrivate.buildResearchTitleRetryPrompt({
+  ...tokenAuditOptions,
+  keywordLanes: ["UNUSED_LANE_SENTINEL"],
+  recommendedKeywordLanes: ["UNUSED_RECOMMENDED_SENTINEL"]
+}, tokenAuditResearchResult);
+if (compactResearchRetryPrompt.includes("UNUSED_LANE_SENTINEL") || compactResearchRetryPrompt.includes("UNUSED_RECOMMENDED_SENTINEL")) {
+  failed = true;
+  console.error("src/lib/codexRunner.js: Research retry prompt must reuse the selected lane instead of resending the lane pool");
+}
+const imagePromptWithoutArticle = imageContractPrivate.buildImageWorkerPrompt({
+  ...tokenAuditOptions,
+  finalTitle: "테스트 제목",
+  writerResult: { ...validSectionImageWriterResult, article: "ARTICLE_BODY_MUST_NOT_BE_RESENT_TO_IMAGE_WORKER" }
+});
+if (imagePromptWithoutArticle.includes("ARTICLE_BODY_MUST_NOT_BE_RESENT_TO_IMAGE_WORKER")) {
+  failed = true;
+  console.error("src/lib/codexRunner.js: Image Worker prompt must rely on contracted image prompts instead of resending the full article");
+}
+const partialImageResult = {
+  status: "partial",
+  titleImagePath: "C:\\generated\\title.png",
+  titleImageVerified: true,
+  bodyImages: [{ ...validImageWorkerResult.bodyImages[0] }],
+  notes: ["두 번째 이미지 실패"]
+};
+const pendingImages = imageContractPrivate.pendingImageWriterResult(validSectionImageWriterResult, partialImageResult, {
+  includeTitleImage: true,
+  maxBodyImages: 10
+});
+if (pendingImages.titleImagePrompt || pendingImages.bodyImages.length !== 1 || Number(pendingImages.bodyImages[0]?.sequence) !== 2) {
+  failed = true;
+  console.error("src/lib/codexRunner.js: Image retry must request only failed or unverified image items");
+}
+const completedImageRetry = imageContractPrivate.mergeImageWorkerAttempts(partialImageResult, {
+  status: "success",
+  titleImagePath: "",
+  titleImageVerified: false,
+  bodyImages: [{ ...validImageWorkerResult.bodyImages[1] }],
+  notes: []
+});
+const completedImageRetryIssue = imageContractPrivate.imageWorkerContractIssueReason(
+  completedImageRetry,
+  validSectionImageWriterResult,
+  { includeTitleImage: true, maxBodyImages: 10 }
+);
+if (completedImageRetryIssue) {
+  failed = true;
+  console.error(`src/lib/codexRunner.js: successful prior images must survive a partial retry merge: ${completedImageRetryIssue}`);
+}
+
 if (failed) {
   process.exit(1);
 }
@@ -309,6 +406,15 @@ function assertCondition(condition, description) {
     console.error(description);
   }
 }
+
+const autoRetryBlock = extractFunctionBlock(sourceFiles.rendererApp, "function shouldRetryAutoResult", "automatic retry policy");
+assertCondition(
+  autoRetryBlock
+    && autoRetryBlock.content.includes('status === "duplicate_retry"')
+    && autoRetryBlock.content.includes('failurePhase || ""')
+    && autoRetryBlock.content.includes('=== "research"'),
+  "src/renderer/app.js: full-pipeline automatic retry must be limited to duplicate-title or research-lane failures"
+);
 
 assertCondition(
   sourceFiles.tistoryPublisher.content.includes("const TISTORY_TAG_LIMIT = 8")
@@ -1338,7 +1444,7 @@ if (
   researchTitlePrompt
   && (!researchTitlePrompt.content.includes("Naver-home title judgment")
     || !researchTitlePrompt.content.includes("not a template filler")
-    || !researchTitlePrompt.content.includes("Build at least three titleCandidates from different editorial angles")
+    || !researchTitlePrompt.content.includes("Consider at least three title angles internally")
     || !researchTitlePrompt.content.includes("Treat Current writing date as an internal freshness reference")
     || !researchTitlePrompt.content.includes("Do not append a generic freshness or preparation suffix")
     || !researchTitlePrompt.content.includes("the selected topicLane is only a discovery lane")

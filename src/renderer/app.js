@@ -168,7 +168,11 @@ function addLog(payload) {
 
 function shouldRetryAutoResult(result) {
   const status = String(result?.status || "").toLowerCase();
-  return !["success", "generated", "codex_usage_limit", "codex_exec_failed", "session_expired"].includes(status);
+  if (["success", "generated", "codex_usage_limit", "codex_exec_failed", "session_expired"].includes(status)) {
+    return false;
+  }
+  if (status === "duplicate_retry") return true;
+  return String(result?.failurePhase || "").toLowerCase() === "research";
 }
 
 function autoAttemptLimitForResult(result) {
@@ -566,6 +570,10 @@ function renderHistory(history) {
       item.keyword && `키워드 ${item.keyword}`,
       item.blog_id && `블로그 ${item.blog_id}`
     ].filter(Boolean).join(" · ");
+    const agentTokenText = Object.entries(item.token_agents || {})
+      .filter(([, value]) => Number(value || 0) > 0)
+      .map(([agent, value]) => `${agent} ${formatTokens(value)}`)
+      .join(" · ");
     const detailRows = [
       ["주제", item.topic],
       ["선택 lane", item.selected_lane || item.lane || item.keyword_lane],
@@ -574,6 +582,11 @@ function renderHistory(history) {
       ["검토 결과", item.final_verdict],
       ["실패 단계", item.failure_phase],
       ["근거 요약", item.source_summary],
+      ["토큰 상세", Number(item.token_input || 0) > 0
+        ? `입력 ${formatTokens(item.token_input)} · 캐시 ${formatTokens(item.token_cached_input)} · 출력 ${formatTokens(item.token_output)} · 유효 ${formatTokens(item.token_total)}`
+        : ""],
+      ["에이전트별 토큰", agentTokenText],
+      ["직접 전달 프롬프트", Number(item.prompt_characters || 0) > 0 ? `${Number(item.prompt_characters).toLocaleString()}자` : ""],
       ["사유", item.reason]
     ].filter(([, value]) => String(value || "").trim());
 

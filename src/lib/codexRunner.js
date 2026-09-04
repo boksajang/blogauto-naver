@@ -671,6 +671,54 @@ function rankSearchResultsForPrompt(searchResults) {
   return uniquePromptCandidates([...authorityItems, ...independentItems, ...strongItems, ...items]);
 }
 
+function compactResearchHandoffForPrompt(researchResult, { includeWriterContract = false } = {}) {
+  const source = researchResult && typeof researchResult === "object" ? researchResult : {};
+  const compact = {
+    status: source.status || "",
+    failureReason: source.failureReason || "",
+    finalTitle: source.finalTitle || source.selectedTitle || "",
+    topicThesis: source.topicThesis || "",
+    topicLane: source.topicLane || "",
+    selectedKeywordPhrases: Array.isArray(source.selectedKeywordPhrases) ? source.selectedKeywordPhrases : [],
+    searchNeed: source.searchNeed || "",
+    factBased: source.factBased === true,
+    directTopicPreserved: source.directTopicPreserved !== false,
+    anchorEvent: source.anchorEvent || {},
+    currentPeg: source.currentPeg || {},
+    currentBridgeRequired: source.currentBridgeRequired === true,
+    currentBridgeSatisfied: source.currentBridgeSatisfied === true,
+    coreQuestions: compactTextList(source.coreQuestions),
+    mustCover: compactTextList(source.mustCover),
+    avoidDirections: compactTextList(source.avoidDirections),
+    confirmedFacts: compactTextList(source.confirmedFacts),
+    uncertainItems: compactTextList(source.uncertainItems),
+    usableSources: (Array.isArray(source.usableSources) ? source.usableSources : []).slice(0, 12).map((item) => ({
+      sourceId: item?.sourceId || "",
+      title: item?.title || "",
+      url: item?.url || "",
+      reason: item?.reason || ""
+    })),
+    writerBrief: source.writerBrief || ""
+  };
+  if (includeWriterContract) compact.writerContract = source.writerContract || {};
+  return compact;
+}
+
+function compactWriterResultForPrompt(writerResult) {
+  const source = writerResult && typeof writerResult === "object" ? writerResult : {};
+  return {
+    status: source.status || "",
+    failureReason: source.failureReason || "",
+    title: source.title || "",
+    article: source.article || "",
+    tags: Array.isArray(source.tags) ? source.tags : [],
+    titleImagePrompt: source.titleImagePrompt || "",
+    titleImageText: Array.isArray(source.titleImageText) ? source.titleImageText : [],
+    bodyImages: Array.isArray(source.bodyImages) ? source.bodyImages : [],
+    notes: compactTextList(source.notes)
+  };
+}
+
 function isMissingCodexResultFileError(error) {
   return /Codex result file was not created:/i.test(String(error?.message || ""));
 }
@@ -680,7 +728,6 @@ function buildPrompt({
   keyword,
   category,
   searchResults,
-  historyTitles,
   jobDir,
   runtimeRoot,
   currentDateLabel,
@@ -783,8 +830,8 @@ function buildPrompt({
       maxResults: 8,
       excerptChars: 700
     }), null, 2),
-    researchTitleResult ? "Full Research/Title handoff for factual support only:" : "",
-    researchTitleResult ? JSON.stringify(researchTitleResult, null, 2) : "",
+    researchTitleResult ? "Compact Research/Title factual handoff (Writer Contract is intentionally not duplicated here):" : "",
+    researchTitleResult ? JSON.stringify(compactResearchHandoffForPrompt(researchTitleResult), null, 2) : "",
     "",
     "Source quality summary:",
     JSON.stringify(sourceQuality || { status: "unknown" }, null, 2),
@@ -794,9 +841,6 @@ function buildPrompt({
     "- Even when Source quality status is \"usable\", you must still fail if the excerpts cannot answer the locked Topic thesis. Broad related information is not enough.",
     "- If Source quality says independentEvidenceRequired is true, do not write from Naver blog candidates alone. The article needs at least one official/institutional source or independent editorial source candidate supporting the core launch/release/announcement fact.",
     "- Failure is a normal valid output. If you cannot support the post from extracted excerpts, you must set status to \"failed\". Do not try to be helpful by writing a caveat-filled article.",
-    "",
-    "Existing titles for duplicate awareness:",
-    JSON.stringify(historyTitles.slice(0, 80), null, 2),
     "",
     "Required output:",
     "- Write a JSON file at the exact Output JSON path.",
@@ -976,22 +1020,112 @@ function buildResearchTitlePrompt({
     JSON.stringify(sourceQuality || { status: "unknown" }, null, 2),
     "",
     "Existing titles for duplicate awareness:",
-    JSON.stringify((historyTitles || []).slice(0, 80), null, 2),
+    JSON.stringify((historyTitles || []).slice(0, 40).map((title) => String(title || "").trim().slice(0, 140)), null, 2),
     "",
     "Required output:",
     "- Write a UTF-8 JSON file at the exact Output JSON path.",
-    "- JSON shape: { \"status\": \"PASS\" | \"REVISION\" | \"BLOCK\", \"failureReason\": string, \"finalTitle\": string, \"topicThesis\": string, \"topicLane\": string, \"selectedKeywordIndexes\": number[], \"selectedKeywordPhrases\": string[], \"searchQueries\": string[], \"anchorEvent\": {\"name\": string, \"date\": string, \"summary\": string}, \"currentPeg\": {\"date\": string, \"summary\": string, \"sourceIds\": string[]}, \"currentBridgeRequired\": boolean, \"currentBridgeSatisfied\": boolean, \"directTopicPreserved\": boolean, \"factBased\": boolean, \"searchNeed\": \"skip\" | \"light\" | \"normal\" | \"strict\", \"searchFlowSummary\": string, \"repeatedTopics\": string[], \"competitionGaps\": string[], \"coreQuestions\": string[], \"mustCover\": string[], \"avoidDirections\": string[], \"confirmedFacts\": string[], \"uncertainItems\": string[], \"usableSources\": [{\"sourceId\": string, \"title\": string, \"url\": string, \"reason\": string}], \"titleCandidates\": [{\"title\": string, \"reason\": string, \"risk\": string}], \"writerBrief\": string, \"writerContract\": { \"articleMission\": string, \"selectedTitle\": string, \"topicThesis\": string, \"targetReader\": string, \"readerPromise\": string, \"firstSectionFocus\": string, \"mustAnswer\": string[], \"mustCover\": string[], \"mustNotDo\": string[], \"confirmedFacts\": string[], \"uncertainItems\": string[], \"sourceBoundaries\": string[], \"safetyBoundaries\": string[], \"recommendedStructure\": string[], \"currentBridgeRequired\": boolean, \"currentBridgeSatisfied\": boolean, \"anchorEvent\": object, \"currentPeg\": object, \"tone\": string }, \"notes\": string[] }.",
+    "- JSON shape: { \"status\": \"PASS\" | \"REVISION\" | \"BLOCK\", \"failureReason\": string, \"finalTitle\": string, \"topicThesis\": string, \"topicLane\": string, \"selectedKeywordIndexes\": number[], \"selectedKeywordPhrases\": string[], \"searchQueries\": string[], \"anchorEvent\": {\"name\": string, \"date\": string, \"summary\": string}, \"currentPeg\": {\"date\": string, \"summary\": string, \"sourceIds\": string[]}, \"currentBridgeRequired\": boolean, \"currentBridgeSatisfied\": boolean, \"directTopicPreserved\": boolean, \"factBased\": boolean, \"searchNeed\": \"skip\" | \"light\" | \"normal\" | \"strict\", \"searchFlowSummary\": string, \"coreQuestions\": string[], \"mustCover\": string[], \"avoidDirections\": string[], \"confirmedFacts\": string[], \"uncertainItems\": string[], \"usableSources\": [{\"sourceId\": string, \"title\": string, \"url\": string, \"reason\": string}], \"writerBrief\": string, \"writerContract\": { \"articleMission\": string, \"selectedTitle\": string, \"topicThesis\": string, \"targetReader\": string, \"readerPromise\": string, \"firstSectionFocus\": string, \"mustAnswer\": string[], \"mustCover\": string[], \"mustNotDo\": string[], \"confirmedFacts\": string[], \"uncertainItems\": string[], \"sourceBoundaries\": string[], \"safetyBoundaries\": string[], \"recommendedStructure\": string[], \"currentBridgeRequired\": boolean, \"currentBridgeSatisfied\": boolean, \"anchorEvent\": object, \"currentPeg\": object, \"tone\": string }, \"notes\": string[] }.",
     "- topicLane, selectedKeywordIndexes, selectedKeywordPhrases, and searchQueries are required in auto topic mode. searchQueries must be narrow and must not contain the full Category keyword pool.",
+    "- Keep output compact: at most 4 searchQueries, 8 coreQuestions/mustCover/avoidDirections items each, 12 confirmedFacts/uncertainItems items each, 10 usableSources, and only actionable notes.",
     "- For REVISION, searchQueries must carry the next-step research intent from the missing facts. Do not leave the app with only a broad category or keyword-lane phrase.",
     "- anchorEvent/currentPeg/currentBridgeRequired/currentBridgeSatisfied are required. Use empty strings/arrays only when no older anchorEvent exists and explain that in notes.",
     "- If status is BLOCK, keep finalTitle empty unless a safe non-publishable working title is useful, and explain failureReason concisely in Korean.",
     "- If status is PASS or REVISION, finalTitle must be a Korean Naver Blog title that is click-worthy without exaggeration.",
     "- Naver-home title judgment: act like an editor choosing one homepage card, not a template filler. The title should combine a concrete subject, a confirmed event/action/tension, and the reader curiosity created by this specific topic.",
     "- In auto topic mode, reject your own title if replacing the concrete subject/event with another item from the same keyword lane would leave the title essentially unchanged.",
-    "- Build at least three titleCandidates from different editorial angles before choosing finalTitle: event-first, reader-question-first, and consequence-first. Pick the one that feels least generic and most tied to the verified topic.",
+    "- Consider at least three title angles internally before choosing finalTitle: event-first, reader-question-first, and consequence-first. Output only the chosen title to avoid unused verbose data.",
     "- A good title should fail if the named entity/event can be swapped out and the title still works for many unrelated posts. Rewrite until the title depends on the actual subject, source-backed facts, and reader promise.",
     "- Do not append a generic freshness or preparation suffix just to make the title look timely. Avoid vague guide-title cadence, keyword stuffing, and unsupported sensational words.",
     "- If Preferred tone conflicts with the default Naver-home judgment, Preferred tone wins.",
+    "- Print one final line after writing the file: BLOGAUTO_RESULT_READY"
+  ].filter((line) => line !== "").join("\n");
+}
+
+function buildResearchTitleRetryPrompt(options, previousResearchResult) {
+  const resultPath = path.join(options.jobDir, "research-title-result.json");
+  const hasSearchCandidates = Array.isArray(options.searchResults) && options.searchResults.length > 0;
+  return [
+    "You are the Research/Title Agent revising an existing Korean Naver Blog research decision.",
+    "Do not write the article body or generate images. Re-evaluate only what changed after the previous decision.",
+    `Category: ${options.category}`,
+    `Category keyword: ${options.keyword || "(none)"}`,
+    `User direct topic: ${options.topic || "(none)"}`,
+    `Topic mode: ${options.topicMode || "manual"}`,
+    `Current writing date: ${options.currentDateLabel || new Date().toISOString().slice(0, 10)}`,
+    `Preferred tone: ${options.preferredTone || "(agent decides)"}`,
+    `Output JSON path: ${resultPath}`,
+    "",
+    "Progress logging:",
+    "- BLOGAUTO_PROGRESS: research",
+    "- BLOGAUTO_PROGRESS: title",
+    "- BLOGAUTO_PROGRESS: save",
+    "",
+    "Previous compact decision:",
+    JSON.stringify(compactResearchHandoffForPrompt(previousResearchResult, { includeWriterContract: true }), null, 2),
+    "",
+    options.researchRevisionContext ? "Additional revision context:" : "",
+    options.researchRevisionContext || "",
+    "New/merged search candidates:",
+    JSON.stringify(compactSearchResultsForPrompt(options.searchResults, { maxResults: 6, excerptChars: 420 }), null, 2),
+    "Source quality summary:",
+    JSON.stringify(options.sourceQuality || { status: "unknown" }, null, 2),
+    "",
+    "Revision rules:",
+    `- Search candidates are ${hasSearchCandidates ? "available" : "not available"}. Do not use browser, network, or unrelated file reads; use only this handoff.`,
+    "- Preserve a manual user topic. In auto mode keep one narrow keyword lane and choose a concrete source-backed subject/event, not a category-level generic title.",
+    "- Reassess status, finalTitle, facts, source boundaries, current bridge, and writerContract from the new evidence. Do not repeat unsupported fields from the previous decision.",
+    "- Official/current/reader-risk claims require suitable evidence. Blog candidates alone are discovery clues when authority or independent evidence is required.",
+    "- If an older anchorEvent is presented as current, PASS only with a dated, source-backed currentPeg and currentBridgeSatisfied=true.",
+    "- Return REVISION with narrow next searchQueries when a fixable evidence gap remains; return BLOCK when the title promise cannot be supported.",
+    "- finalTitle must remain Korean, specific, non-clickbait, and answerable by the evidence. Compare three materially different title angles internally before choosing it.",
+    "- writerContract must be a compact reader-facing brief. Put gaps and limits in uncertainItems/sourceBoundaries/safetyBoundaries/mustNotDo, not in article coverage.",
+    "",
+    "Required output:",
+    "- Overwrite the exact Output JSON path with UTF-8 JSON.",
+    "- JSON shape: { \"status\": \"PASS\" | \"REVISION\" | \"BLOCK\", \"failureReason\": string, \"finalTitle\": string, \"topicThesis\": string, \"topicLane\": string, \"selectedKeywordIndexes\": number[], \"selectedKeywordPhrases\": string[], \"searchQueries\": string[], \"anchorEvent\": {\"name\": string, \"date\": string, \"summary\": string}, \"currentPeg\": {\"date\": string, \"summary\": string, \"sourceIds\": string[]}, \"currentBridgeRequired\": boolean, \"currentBridgeSatisfied\": boolean, \"directTopicPreserved\": boolean, \"factBased\": boolean, \"searchNeed\": \"skip\" | \"light\" | \"normal\" | \"strict\", \"searchFlowSummary\": string, \"coreQuestions\": string[], \"mustCover\": string[], \"avoidDirections\": string[], \"confirmedFacts\": string[], \"uncertainItems\": string[], \"usableSources\": [{\"sourceId\": string, \"title\": string, \"url\": string, \"reason\": string}], \"writerBrief\": string, \"writerContract\": object, \"notes\": string[] }.",
+    "- Keep output compact: at most 4 searchQueries, 8 coreQuestions/mustCover/avoidDirections items each, 12 confirmedFacts/uncertainItems items each, 10 usableSources, and only actionable notes.",
+    "- Print one final line after writing the file: BLOGAUTO_RESULT_READY"
+  ].filter((line) => line !== "").join("\n");
+}
+
+function buildWriterRetryPrompt(options, previousWriterResult) {
+  const resultPath = path.join(options.jobDir, "agent-result.json");
+  const bodyImageLimit = normalizeMaxBodyImages(options.maxBodyImages);
+  const writerContract = buildWriterContract(options.researchTitleResult, options);
+  return [
+    "You are the Writer Agent revising an existing Korean Naver Blog article.",
+    "Correct only the requested problems while preserving supported content, the selected title, and factual boundaries.",
+    `Selected title: ${options.researchTitleResult?.finalTitle || options.topic || ""}`,
+    `Current writing date: ${options.currentDateLabel || new Date().toISOString().slice(0, 10)}`,
+    `Preferred tone: ${options.preferredTone || "(agent decides)"}`,
+    `Output JSON path: ${resultPath}`,
+    `Revision attempt: ${options.writerAttempt || 2}/${options.maxWriterAttempts || 2}`,
+    `Revision instructions: ${options.writerRevisionFeedback || "Correct the invalid Writer result."}`,
+    "",
+    "Writer Contract (highest priority):",
+    JSON.stringify(writerContract, null, 2),
+    "Compact factual handoff (Writer Contract intentionally omitted):",
+    JSON.stringify(compactResearchHandoffForPrompt(options.researchTitleResult), null, 2),
+    "Previous Writer result to revise:",
+    JSON.stringify(compactWriterResultForPrompt(previousWriterResult), null, 2),
+    "",
+    "Revision requirements:",
+    "- Keep the exact selected title and rewrite the complete JSON result at the same path. Do not explain the retry in the article.",
+    "- Use only confirmed facts and source boundaries in the handoff. Do not invent dates, amounts, conditions, official claims, experience, or current status.",
+    "- The article must be Korean, reader-facing, naturally structured, normally 1500-2000 Korean characters, and must directly fulfill every Writer Contract promise.",
+    "- Do not narrate research, prompts, candidates, agents, reports, JSON, source quality, or internal limitations in the article.",
+    "- Preserve [SECTION - heading] markers. Do not repeat the generated title as a plain article line.",
+    options.includeTitleImage !== false
+      ? "- Return 2-5 Korean titleImageText strings derived from the whole article and a titleImagePrompt that explicitly renders every string as one readable whole-article information card."
+      : "- Title image generation is disabled; leave titleImage fields empty.",
+    bodyImageLimit > 0
+      ? `- For every article section, up to ${bodyImageLimit}, place exactly one sequential [IMAGE INSERT - n] immediately after its SECTION marker and return one matching bodyImages item whose prompt compresses the entire section.`
+      : "- Body image generation is disabled; return bodyImages as an empty array.",
+    "- If the revision cannot satisfy the contract from supplied evidence, return status failed instead of padding or inventing.",
+    "",
+    "Required output:",
+    "- JSON shape: { \"status\": \"success\" | \"failed\", \"failureReason\": string, \"title\": string, \"article\": string, \"tags\": string[], \"bodyImages\": [{\"sequence\": number, \"sectionHeading\": string, \"path\": string, \"prompt\": string}], \"titleImagePath\": string, \"titleImagePrompt\": string, \"titleImageText\": string[], \"notes\": string[] }.",
+    "- Do not generate images in this step. Leave image paths empty.",
     "- Print one final line after writing the file: BLOGAUTO_RESULT_READY"
   ].filter((line) => line !== "").join("\n");
 }
@@ -1103,11 +1237,11 @@ function buildMainReviewPrompt({
     "- Return REVISION if the issue is fixable by rewriting without new research, but do not rewrite it here.",
     "- Return BLOCK if facts are insufficient, sources conflict, official/current evidence is missing, the article is unsupported, the direct topic changed, or publishing could mislead readers.",
     "",
-    "Research/Title Agent result:",
-    JSON.stringify(researchTitleResult || {}, null, 2),
+    "Compact Research/Title Agent result (Writer Contract is supplied separately above):",
+    JSON.stringify(compactResearchHandoffForPrompt(researchTitleResult), null, 2),
     "",
     "Writer Agent result:",
-    JSON.stringify(writerResult || {}, null, 2),
+    JSON.stringify(compactWriterResultForPrompt(writerResult), null, 2),
     "",
     "Required output:",
     "- Write a UTF-8 JSON file at the exact Output JSON path.",
@@ -1115,6 +1249,7 @@ function buildMainReviewPrompt({
     "- Use Korean for failureReason, issues, revisionInstructions, and notes.",
     "- If status is PASS, failureReason must be empty and every boolean review field must be true.",
     "- If status is REVISION or BLOCK, failureReason must concisely explain why it cannot be published as-is.",
+    "- Keep issues, revisionInstructions, and notes concise and non-duplicative; include only items that change the verdict or next Writer revision.",
     "- Print one final line after writing the file: BLOGAUTO_RESULT_READY"
   ].filter((line) => line !== "").join("\n");
 }
@@ -1152,8 +1287,8 @@ function buildWriterContractRefinementPrompt({
     "Draft Writer Contract:",
     JSON.stringify(draftWriterContract || {}, null, 2),
     "",
-    "Research/Title Agent result:",
-    JSON.stringify(researchTitleResult || {}, null, 2),
+    "Compact Research/Title Agent result (the draft contract above is intentionally not duplicated):",
+    JSON.stringify(compactResearchHandoffForPrompt(researchTitleResult), null, 2),
     "",
     "Source quality summary:",
     JSON.stringify(sourceQuality || { status: "unknown" }, null, 2),
@@ -1162,6 +1297,7 @@ function buildWriterContractRefinementPrompt({
     "- Write a UTF-8 JSON file at the exact Output JSON path.",
     "- JSON shape: { \"status\": \"success\" | \"failed\", \"failureReason\": string, \"writerContract\": { \"articleMission\": string, \"selectedTitle\": string, \"topicThesis\": string, \"targetReader\": string, \"readerPromise\": string, \"firstSectionFocus\": string, \"mustAnswer\": string[], \"mustCover\": string[], \"mustNotDo\": string[], \"confirmedFacts\": string[], \"uncertainItems\": string[], \"sourceBoundaries\": string[], \"safetyBoundaries\": string[], \"recommendedStructure\": string[], \"readerValueChecklist\": string[], \"currentBridgeRequired\": boolean, \"currentBridgeSatisfied\": boolean, \"anchorEvent\": object, \"currentPeg\": object, \"tone\": string }, \"notes\": string[] }.",
     "- If status is failed, explain why the contract cannot support a publishable reader-facing article.",
+    "- Keep every array concise and deduplicated. Do not repeat the same fact or boundary in notes.",
     "- Print one final line after writing the file: BLOGAUTO_RESULT_READY"
   ].filter((line) => line !== "").join("\n");
 }
@@ -1268,8 +1404,7 @@ function buildImageWorkerPrompt({
     JSON.stringify({
       titleImagePrompt: writerResult?.titleImagePrompt || "",
       titleImageText: Array.isArray(writerResult?.titleImageText) ? writerResult.titleImageText : [],
-      bodyImages: Array.isArray(writerResult?.bodyImages) ? writerResult.bodyImages.slice(0, bodyImageLimit) : [],
-      article: writerResult?.article || ""
+      bodyImages: Array.isArray(writerResult?.bodyImages) ? writerResult.bodyImages.slice(0, bodyImageLimit) : []
     }, null, 2),
     "",
     "Required output:",
@@ -1277,6 +1412,7 @@ function buildImageWorkerPrompt({
     "- JSON shape: { \"status\": \"success\" | \"partial\" | \"failed\", \"failureReason\": string, \"titleImagePath\": string, \"titleImageVerified\": boolean, \"bodyImages\": [{\"sequence\": number, \"sectionHeading\": string, \"path\": string, \"prompt\": string, \"summaryVerified\": boolean}], \"notes\": string[] }.",
     "- If no image prompt is available, return status \"failed\", empty image paths, and a concise Korean note.",
     "- If some images succeed and some fail, return status \"partial\" with successful paths and notes for failures.",
+    "- Keep notes concise and include only generation failures or verification facts needed by the app.",
     "- Status \"success\" is allowed only when every requested image has a concrete image file path, titleImageVerified is true when requested, and every body image has summaryVerified true.",
     "- Print one final line after writing the file: BLOGAUTO_RESULT_READY"
   ].filter((line) => line !== "").join("\n");
@@ -1311,6 +1447,55 @@ function mergeImageWorkerResult(writerResult, imageResult, options = {}) {
     titleImagePath: options.includeTitleImage === false ? "" : String(imageResult?.titleImagePath || ""),
     bodyImages: mergedBodyImages,
     notes
+  };
+}
+
+function mergeImageWorkerAttempts(previousResult, currentResult) {
+  if (!previousResult) return currentResult || {};
+  const previousImages = Array.isArray(previousResult.bodyImages) ? previousResult.bodyImages : [];
+  const currentImages = Array.isArray(currentResult?.bodyImages) ? currentResult.bodyImages : [];
+  const bySequence = new Map();
+  for (const item of [...previousImages, ...currentImages]) {
+    const sequence = Number(item?.sequence || 0);
+    if (sequence <= 0) continue;
+    const existing = bySequence.get(sequence);
+    const itemIsUsable = Boolean(String(item?.path || "").trim()) && item?.summaryVerified === true;
+    const existingIsUsable = Boolean(String(existing?.path || "").trim()) && existing?.summaryVerified === true;
+    if (!existing || itemIsUsable || !existingIsUsable) bySequence.set(sequence, item);
+  }
+  const titleFromCurrent = Boolean(String(currentResult?.titleImagePath || "").trim())
+    && currentResult?.titleImageVerified === true;
+  return {
+    ...previousResult,
+    ...currentResult,
+    status: "success",
+    failureReason: "",
+    titleImagePath: titleFromCurrent ? currentResult.titleImagePath : previousResult.titleImagePath || currentResult?.titleImagePath || "",
+    titleImageVerified: titleFromCurrent ? true : previousResult.titleImageVerified === true || currentResult?.titleImageVerified === true,
+    bodyImages: [...bySequence.values()].sort((a, b) => Number(a.sequence || 0) - Number(b.sequence || 0)),
+    notes: compactTextList([previousResult.notes, currentResult?.notes])
+  };
+}
+
+function pendingImageWriterResult(writerResult, imageResult, options = {}) {
+  const bodyImageLimit = normalizeMaxBodyImages(options.maxBodyImages);
+  const titlePending = options.includeTitleImage !== false
+    && !(String(imageResult?.titleImagePath || "").trim() && imageResult?.titleImageVerified === true);
+  const generatedImages = Array.isArray(imageResult?.bodyImages) ? imageResult.bodyImages : [];
+  const pendingBodyImages = (Array.isArray(writerResult?.bodyImages) ? writerResult.bodyImages : [])
+    .slice(0, bodyImageLimit)
+    .filter((expected) => {
+      const actual = generatedImages.find((item) => Number(item?.sequence) === Number(expected?.sequence));
+      return !actual
+        || !String(actual.path || "").trim()
+        || actual.summaryVerified !== true
+        || normalizedSectionHeading(actual.sectionHeading) !== normalizedSectionHeading(expected.sectionHeading);
+    });
+  return {
+    title: writerResult?.title || "",
+    titleImagePrompt: titlePending ? writerResult?.titleImagePrompt || "" : "",
+    titleImageText: titlePending && Array.isArray(writerResult?.titleImageText) ? writerResult.titleImageText : [],
+    bodyImages: pendingBodyImages
   };
 }
 
@@ -1823,6 +2008,10 @@ async function runCodexTask({
   log = () => {},
   tokenOffset = 0,
   grossTokenOffset = 0,
+  inputTokenOffset = 0,
+  cachedInputTokenOffset = 0,
+  outputTokenOffset = 0,
+  promptCharacterOffset = 0,
   agentTokenOffset = 0,
   agent = "main"
 }) {
@@ -1845,6 +2034,17 @@ async function runCodexTask({
   let taskEffort = modelEffortForAgent(options, agent);
   let finalTokenUsageLogged = false;
   let taskStartedAt = Date.now();
+  const promptCharacters = String(prompt || "").length;
+  const estimatedPromptTokens = Math.ceil(promptCharacters / 3);
+  log(`${agentDisplayName(agent)} 프롬프트 크기: ${promptCharacters.toLocaleString()}자 (약 ${estimatedPromptTokens.toLocaleString()} tokens)`, "info", agent);
+  const fallbackUsage = {
+    total: 0,
+    grossTotal: 0,
+    inputTokens: 0,
+    cachedInputTokens: 0,
+    outputTokens: 0,
+    rateLimits: null
+  };
 
   const recoverTokenUsageFromSession = () => {
     if (tokenState.total > 0 && tokenState.rateLimits) return;
@@ -1874,18 +2074,24 @@ async function runCodexTask({
   };
 
   const reportTokenUsage = ({ final = false } = {}) => {
-    const taskTokens = Number(tokenState.total || 0);
-    const taskGrossTokens = Number(tokenState.grossTotal || taskTokens || 0);
+    const taskTokens = fallbackUsage.total + Number(tokenState.total || 0);
+    const taskGrossTokens = fallbackUsage.grossTotal + Number(tokenState.grossTotal || tokenState.total || 0);
+    const taskInputTokens = fallbackUsage.inputTokens + Number(tokenState.inputTokens || 0);
+    const taskCachedInputTokens = fallbackUsage.cachedInputTokens + Number(tokenState.cachedInputTokens || 0);
+    const taskOutputTokens = fallbackUsage.outputTokens + Number(tokenState.outputTokens || 0);
     const cumulativeTokens = tokenOffset + taskTokens;
     const cumulativeGrossTokens = grossTokenOffset + taskGrossTokens;
+    const cumulativePromptCharacters = promptCharacterOffset + promptCharacters;
     const agentCumulativeTokens = agentTokenOffset + taskTokens;
     if (typeof options.onTokenUsage === "function") {
       options.onTokenUsage({
         total: cumulativeTokens,
         grossTotal: cumulativeGrossTokens,
-        inputTokens: Number(tokenState.inputTokens || 0),
-        cachedInputTokens: Number(tokenState.cachedInputTokens || 0),
-        outputTokens: Number(tokenState.outputTokens || 0),
+        inputTokens: inputTokenOffset + taskInputTokens,
+        cachedInputTokens: cachedInputTokenOffset + taskCachedInputTokens,
+        outputTokens: outputTokenOffset + taskOutputTokens,
+        promptCharacters: cumulativePromptCharacters,
+        estimatedPromptTokens: Math.ceil(cumulativePromptCharacters / 3),
         lastTotal: Number(tokenState.lastTotal || 0),
         rateLimits: tokenState.rateLimits,
         agent,
@@ -2072,6 +2278,13 @@ async function runCodexTask({
     if (taskEffort !== "xhigh") {
       throw error;
     }
+    recoverTokenUsageFromSession();
+    fallbackUsage.total += Number(tokenState.total || 0);
+    fallbackUsage.grossTotal += Number(tokenState.grossTotal || tokenState.total || 0);
+    fallbackUsage.inputTokens += Number(tokenState.inputTokens || 0);
+    fallbackUsage.cachedInputTokens += Number(tokenState.cachedInputTokens || 0);
+    fallbackUsage.outputTokens += Number(tokenState.outputTokens || 0);
+    fallbackUsage.rateLimits = tokenState.rateLimits || fallbackUsage.rateLimits;
     log("xhigh 호출이 실패하여 high로 낮춰 다시 실행합니다.", "warn", agent);
     taskEffort = "high";
     tokenState.awaitingValue = false;
@@ -2096,16 +2309,18 @@ async function runCodexTask({
   return {
     ...readAgentResult(options.jobDir, resultFileName),
     tokenUsage: {
-      total: tokenState.total,
-      grossTotal: tokenState.grossTotal,
-      inputTokens: tokenState.inputTokens,
-      cachedInputTokens: tokenState.cachedInputTokens,
-      outputTokens: tokenState.outputTokens,
+      total: fallbackUsage.total + Number(tokenState.total || 0),
+      grossTotal: fallbackUsage.grossTotal + Number(tokenState.grossTotal || tokenState.total || 0),
+      inputTokens: fallbackUsage.inputTokens + Number(tokenState.inputTokens || 0),
+      cachedInputTokens: fallbackUsage.cachedInputTokens + Number(tokenState.cachedInputTokens || 0),
+      outputTokens: fallbackUsage.outputTokens + Number(tokenState.outputTokens || 0),
       lastTotal: tokenState.lastTotal,
       lastInputTokens: tokenState.lastInputTokens,
       lastCachedInputTokens: tokenState.lastCachedInputTokens,
       lastOutputTokens: tokenState.lastOutputTokens,
-      rateLimits: tokenState.rateLimits
+      rateLimits: tokenState.rateLimits || fallbackUsage.rateLimits,
+      promptCharacters,
+      estimatedPromptTokens
     }
   };
 }
@@ -2244,19 +2459,72 @@ async function runCodexGeneration(options, log = () => {}) {
   };
   let totalTokens = 0;
   let totalGrossTokens = 0;
+  let totalInputTokens = 0;
+  let totalCachedInputTokens = 0;
+  let totalOutputTokens = 0;
+  let totalPromptCharacters = 0;
+  const agentPromptCharacters = {
+    main: 0,
+    research: 0,
+    writer: 0,
+    image: 0,
+    imageStyle: 0
+  };
   let latestRateLimits = null;
   const rememberRateLimits = (result) => {
     if (result?.tokenUsage?.rateLimits) {
       latestRateLimits = result.tokenUsage.rateLimits;
     }
   };
+  const recordTaskUsage = (result, agent) => {
+    const usage = result?.tokenUsage || {};
+    const total = Number(usage.total || 0);
+    const grossTotal = Number(usage.grossTotal || total || 0);
+    totalTokens += total;
+    totalGrossTokens += grossTotal;
+    totalInputTokens += Number(usage.inputTokens || 0);
+    totalCachedInputTokens += Number(usage.cachedInputTokens || 0);
+    totalOutputTokens += Number(usage.outputTokens || 0);
+    totalPromptCharacters += Number(usage.promptCharacters || 0);
+    if (Object.prototype.hasOwnProperty.call(agentTokenTotals, agent)) {
+      agentTokenTotals[agent] += total;
+      agentGrossTokenTotals[agent] += grossTotal;
+      agentPromptCharacters[agent] += Number(usage.promptCharacters || 0);
+    }
+    rememberRateLimits(result);
+  };
   const tokenUsageSnapshot = () => ({
     total: totalTokens,
     grossTotal: totalGrossTokens,
+    inputTokens: totalInputTokens,
+    cachedInputTokens: totalCachedInputTokens,
+    outputTokens: totalOutputTokens,
+    promptCharacters: totalPromptCharacters,
+    estimatedPromptTokens: Math.ceil(totalPromptCharacters / 3),
     rateLimits: latestRateLimits,
     agents: { ...agentTokenTotals },
-    grossAgents: { ...agentGrossTokenTotals }
+    grossAgents: { ...agentGrossTokenTotals },
+    promptCharactersByAgent: { ...agentPromptCharacters }
   });
+  const duplicateTitleOutcome = async (title, researchResult) => {
+    if (typeof options.onFinalTitleCandidate !== "function") return null;
+    const verdict = await options.onFinalTitleCandidate(title, researchResult);
+    if (!verdict?.duplicate) return null;
+    return {
+      status: "duplicate_retry",
+      failurePhase: "title_duplicate",
+      failureReason: String(verdict.reason || "기존 제목과 유사해 본문 및 이미지 생성을 시작하지 않았습니다."),
+      duplicateSimilarity: Number(verdict.similarity || 0),
+      title,
+      article: "",
+      tags: [],
+      bodyImages: [],
+      titleImagePath: "",
+      notes: [String(verdict.reason || "기존 제목과 유사함")],
+      researchTitleResult: researchResult,
+      tokenUsage: tokenUsageSnapshot()
+    };
+  };
 
   const accountImageStyle = effectiveOptions.accountImageStyle || {};
   const sampleImagePath = String(accountImageStyle.sampleImagePath || "").trim();
@@ -2280,14 +2548,14 @@ async function runCodexGeneration(options, log = () => {}) {
       log,
       tokenOffset: totalTokens,
       grossTokenOffset: totalGrossTokens,
+      inputTokenOffset: totalInputTokens,
+      cachedInputTokenOffset: totalCachedInputTokens,
+      outputTokenOffset: totalOutputTokens,
+      promptCharacterOffset: totalPromptCharacters,
       agentTokenOffset: agentTokenTotals.imageStyle,
       agent: "imageStyle"
     });
-    totalTokens += Number(styleResult.tokenUsage?.total || 0);
-    totalGrossTokens += Number(styleResult.tokenUsage?.grossTotal || styleResult.tokenUsage?.total || 0);
-    agentTokenTotals.imageStyle += Number(styleResult.tokenUsage?.total || 0);
-    agentGrossTokenTotals.imageStyle += Number(styleResult.tokenUsage?.grossTotal || styleResult.tokenUsage?.total || 0);
-    rememberRateLimits(styleResult);
+    recordTaskUsage(styleResult, "imageStyle");
     const generatedStylePrompt = String(styleResult.imageStylePrompt || "").trim();
     if (String(styleResult.status || "").toLowerCase() === "success" && generatedStylePrompt) {
       accountImageStylePrompt = generatedStylePrompt;
@@ -2324,14 +2592,17 @@ async function runCodexGeneration(options, log = () => {}) {
     promptFileName: "research-title-prompt.txt",
     resultFileName: "research-title-result.json",
     log,
+    tokenOffset: totalTokens,
+    grossTokenOffset: totalGrossTokens,
+    inputTokenOffset: totalInputTokens,
+    cachedInputTokenOffset: totalCachedInputTokens,
+    outputTokenOffset: totalOutputTokens,
+    promptCharacterOffset: totalPromptCharacters,
+    agentTokenOffset: agentTokenTotals.research,
     agent: "research"
   });
 
-  totalTokens += Number(researchResult.tokenUsage?.total || 0);
-  totalGrossTokens += Number(researchResult.tokenUsage?.grossTotal || researchResult.tokenUsage?.total || 0);
-  agentTokenTotals.research += Number(researchResult.tokenUsage?.total || 0);
-  agentGrossTokenTotals.research += Number(researchResult.tokenUsage?.grossTotal || researchResult.tokenUsage?.total || 0);
-  rememberRateLimits(researchResult);
+  recordTaskUsage(researchResult, "research");
   log(`Research/Title Agent 분석 완료: ${String(researchResult.status || "UNKNOWN").toUpperCase()}`, "info", "research");
   if (typeof options.onResearchTitle === "function") {
     options.onResearchTitle(researchResult);
@@ -2384,12 +2655,16 @@ async function runCodexGeneration(options, log = () => {}) {
     try {
       researchResult = await runCodexTask({
         options: effectiveOptions,
-        prompt: buildResearchTitlePrompt(effectiveOptions),
+        prompt: buildResearchTitleRetryPrompt(effectiveOptions, researchResult),
         promptFileName: researchSearchRound === 1 ? "research-title-prompt.txt" : `research-title-search-${researchSearchRound}-prompt.txt`,
         resultFileName: "research-title-result.json",
         log,
         tokenOffset: totalTokens,
         grossTokenOffset: totalGrossTokens,
+        inputTokenOffset: totalInputTokens,
+        cachedInputTokenOffset: totalCachedInputTokens,
+        outputTokenOffset: totalOutputTokens,
+        promptCharacterOffset: totalPromptCharacters,
         agentTokenOffset: agentTokenTotals.research,
         agent: "research"
       });
@@ -2418,11 +2693,7 @@ async function runCodexGeneration(options, log = () => {}) {
       };
       break;
     }
-    totalTokens += Number(researchResult.tokenUsage?.total || 0);
-    totalGrossTokens += Number(researchResult.tokenUsage?.grossTotal || researchResult.tokenUsage?.total || 0);
-    agentTokenTotals.research += Number(researchResult.tokenUsage?.total || 0);
-    agentGrossTokenTotals.research += Number(researchResult.tokenUsage?.grossTotal || researchResult.tokenUsage?.total || 0);
-    rememberRateLimits(researchResult);
+    recordTaskUsage(researchResult, "research");
     log(`Research/Title Agent 재분석 완료: ${String(researchResult.status || "UNKNOWN").toUpperCase()}`, "info", "research");
     if (typeof options.onResearchTitle === "function") {
       options.onResearchTitle(researchResult);
@@ -2567,6 +2838,9 @@ async function runCodexGeneration(options, log = () => {}) {
     };
   }
 
+  const earlyDuplicateResult = await duplicateTitleOutcome(finalTitle, researchResult);
+  if (earlyDuplicateResult) return earlyDuplicateResult;
+
   const refineWriterContract = async (promptFileName = "writer-contract-prompt.txt") => {
     const draftWriterContract = buildWriterContract(researchResult, {
       topic: finalTitle || effectiveOptions.topic,
@@ -2587,14 +2861,14 @@ async function runCodexGeneration(options, log = () => {}) {
       log,
       tokenOffset: totalTokens,
       grossTokenOffset: totalGrossTokens,
+      inputTokenOffset: totalInputTokens,
+      cachedInputTokenOffset: totalCachedInputTokens,
+      outputTokenOffset: totalOutputTokens,
+      promptCharacterOffset: totalPromptCharacters,
       agentTokenOffset: agentTokenTotals.main,
       agent: "main"
     });
-    totalTokens += Number(contractResult.tokenUsage?.total || 0);
-    totalGrossTokens += Number(contractResult.tokenUsage?.grossTotal || contractResult.tokenUsage?.total || 0);
-    agentTokenTotals.main += Number(contractResult.tokenUsage?.total || 0);
-    agentGrossTokenTotals.main += Number(contractResult.tokenUsage?.grossTotal || contractResult.tokenUsage?.total || 0);
-    rememberRateLimits(contractResult);
+    recordTaskUsage(contractResult, "main");
     const contractStatus = String(contractResult.status || "").toLowerCase();
     if (contractStatus !== "success" || !contractResult.writerContract || typeof contractResult.writerContract !== "object") {
       return {
@@ -2646,27 +2920,36 @@ async function runCodexGeneration(options, log = () => {}) {
     log(`Writer Agent 본문 작성 시작 (${attempt}/${maxReviewAttempts})`, "info", "writer");
     writerResult = await runCodexTask({
       options: effectiveOptions,
-      prompt: buildPrompt({
-        ...effectiveOptions,
-        topic: finalTitle || options.topic,
-        researchTitleResult: researchResult,
-        writerRevisionFeedback,
-        writerAttempt: attempt,
-        maxWriterAttempts: maxReviewAttempts
-      }),
+      prompt: attempt === 1
+        ? buildPrompt({
+          ...effectiveOptions,
+          topic: finalTitle || options.topic,
+          researchTitleResult: researchResult,
+          writerRevisionFeedback,
+          writerAttempt: attempt,
+          maxWriterAttempts: maxReviewAttempts
+        })
+        : buildWriterRetryPrompt({
+          ...effectiveOptions,
+          topic: finalTitle || options.topic,
+          researchTitleResult: researchResult,
+          writerRevisionFeedback,
+          writerAttempt: attempt,
+          maxWriterAttempts: maxReviewAttempts
+        }, writerResult),
       promptFileName: attempt === 1 ? "prompt.txt" : `prompt-retry-${attempt}.txt`,
       resultFileName: "agent-result.json",
       log,
       tokenOffset: totalTokens,
       grossTokenOffset: totalGrossTokens,
+      inputTokenOffset: totalInputTokens,
+      cachedInputTokenOffset: totalCachedInputTokens,
+      outputTokenOffset: totalOutputTokens,
+      promptCharacterOffset: totalPromptCharacters,
       agentTokenOffset: agentTokenTotals.writer,
       agent: "writer"
     });
-    totalTokens += Number(writerResult.tokenUsage?.total || 0);
-    totalGrossTokens += Number(writerResult.tokenUsage?.grossTotal || writerResult.tokenUsage?.total || 0);
-    agentTokenTotals.writer += Number(writerResult.tokenUsage?.total || 0);
-    agentGrossTokenTotals.writer += Number(writerResult.tokenUsage?.grossTotal || writerResult.tokenUsage?.total || 0);
-    rememberRateLimits(writerResult);
+    recordTaskUsage(writerResult, "writer");
 
     const writerIssueReason = writerOutputIssueReason(writerResult)
       || writerImageContractIssueReason(writerResult, effectiveOptions);
@@ -2736,12 +3019,16 @@ async function runCodexGeneration(options, log = () => {}) {
         );
         researchResult = await runCodexTask({
           options: effectiveOptions,
-          prompt: buildResearchTitlePrompt(effectiveOptions),
+          prompt: buildResearchTitleRetryPrompt(effectiveOptions, supplementalResearchResult),
           promptFileName: "research-title-writer-source-search-prompt.txt",
           resultFileName: "research-title-result.json",
           log,
           tokenOffset: totalTokens,
           grossTokenOffset: totalGrossTokens,
+          inputTokenOffset: totalInputTokens,
+          cachedInputTokenOffset: totalCachedInputTokens,
+          outputTokenOffset: totalOutputTokens,
+          promptCharacterOffset: totalPromptCharacters,
           agentTokenOffset: agentTokenTotals.research,
           agent: "research"
         });
@@ -2750,11 +3037,7 @@ async function runCodexGeneration(options, log = () => {}) {
           "research-title-result.json",
           "research-title-writer-source-search-result.json"
         );
-        totalTokens += Number(researchResult.tokenUsage?.total || 0);
-        totalGrossTokens += Number(researchResult.tokenUsage?.grossTotal || researchResult.tokenUsage?.total || 0);
-        agentTokenTotals.research += Number(researchResult.tokenUsage?.total || 0);
-        agentGrossTokenTotals.research += Number(researchResult.tokenUsage?.grossTotal || researchResult.tokenUsage?.total || 0);
-        rememberRateLimits(researchResult);
+        recordTaskUsage(researchResult, "research");
         log(`Research/Title Agent Writer 보강 검색 후 재분석 완료: ${String(researchResult.status || "UNKNOWN").toUpperCase()}`, "info", "research");
         if (typeof options.onResearchTitle === "function") {
           options.onResearchTitle(researchResult);
@@ -2851,6 +3134,8 @@ async function runCodexGeneration(options, log = () => {}) {
             tokenUsage: tokenUsageSnapshot()
           };
         }
+        const supplementalDuplicateResult = await duplicateTitleOutcome(finalTitle, researchResult);
+        if (supplementalDuplicateResult) return supplementalDuplicateResult;
         const supplementalContractRefinement = await refineWriterContract("writer-contract-writer-source-search-prompt.txt");
         if (!supplementalContractRefinement.ok) {
           return {
@@ -2912,14 +3197,14 @@ async function runCodexGeneration(options, log = () => {}) {
       log,
       tokenOffset: totalTokens,
       grossTokenOffset: totalGrossTokens,
+      inputTokenOffset: totalInputTokens,
+      cachedInputTokenOffset: totalCachedInputTokens,
+      outputTokenOffset: totalOutputTokens,
+      promptCharacterOffset: totalPromptCharacters,
       agentTokenOffset: agentTokenTotals.main,
       agent: "main"
     });
-    totalTokens += Number(mainReviewResult.tokenUsage?.total || 0);
-    totalGrossTokens += Number(mainReviewResult.tokenUsage?.grossTotal || mainReviewResult.tokenUsage?.total || 0);
-    agentTokenTotals.main += Number(mainReviewResult.tokenUsage?.total || 0);
-    agentGrossTokenTotals.main += Number(mainReviewResult.tokenUsage?.grossTotal || mainReviewResult.tokenUsage?.total || 0);
-    rememberRateLimits(mainReviewResult);
+    recordTaskUsage(mainReviewResult, "main");
 
     mainReviewStatus = String(mainReviewResult.status || "").toUpperCase();
     const mainReviewPassIssue = mainReviewPassIssueReason(mainReviewResult);
@@ -2970,13 +3255,21 @@ async function runCodexGeneration(options, log = () => {}) {
   if (usesImages) {
     log("Image Worker 이미지 생성 시작", "info", "main");
     let imageContractFailure = "";
+    let accumulatedImageResult = null;
     for (let imageAttempt = 1; imageAttempt <= 2; imageAttempt += 1) {
       try {
+        const imageRequest = imageAttempt === 1
+          ? finalWriterResult
+          : pendingImageWriterResult(finalWriterResult, accumulatedImageResult, effectiveOptions);
+        const requestTitleImage = imageAttempt === 1
+          ? effectiveOptions.includeTitleImage !== false
+          : Boolean(String(imageRequest.titleImagePrompt || "").trim());
         const imageWorkerResult = await runCodexTask({
           options: effectiveOptions,
           prompt: buildImageWorkerPrompt({
             ...effectiveOptions,
-            writerResult: finalWriterResult,
+            includeTitleImage: requestTitleImage,
+            writerResult: imageRequest,
             finalTitle,
             imageRevisionFeedback: imageContractFailure
           }),
@@ -2985,18 +3278,19 @@ async function runCodexGeneration(options, log = () => {}) {
           log,
           tokenOffset: totalTokens,
           grossTokenOffset: totalGrossTokens,
+          inputTokenOffset: totalInputTokens,
+          cachedInputTokenOffset: totalCachedInputTokens,
+          outputTokenOffset: totalOutputTokens,
+          promptCharacterOffset: totalPromptCharacters,
           agentTokenOffset: agentTokenTotals.image,
           agent: "image"
         });
-        totalTokens += Number(imageWorkerResult.tokenUsage?.total || 0);
-        totalGrossTokens += Number(imageWorkerResult.tokenUsage?.grossTotal || imageWorkerResult.tokenUsage?.total || 0);
-        agentTokenTotals.image += Number(imageWorkerResult.tokenUsage?.total || 0);
-        agentGrossTokenTotals.image += Number(imageWorkerResult.tokenUsage?.grossTotal || imageWorkerResult.tokenUsage?.total || 0);
-        rememberRateLimits(imageWorkerResult);
-        imageContractFailure = imageWorkerContractIssueReason(imageWorkerResult, finalWriterResult, effectiveOptions);
+        recordTaskUsage(imageWorkerResult, "image");
+        accumulatedImageResult = mergeImageWorkerAttempts(accumulatedImageResult, imageWorkerResult);
+        imageContractFailure = imageWorkerContractIssueReason(accumulatedImageResult, finalWriterResult, effectiveOptions);
         if (!imageContractFailure) {
           log(`Image Worker 이미지 생성 및 요약 계약 검증 완료 (${imageAttempt}/2)`, "info", "main");
-          finalWriterResult = mergeImageWorkerResult(finalWriterResult, imageWorkerResult, effectiveOptions);
+          finalWriterResult = mergeImageWorkerResult(finalWriterResult, accumulatedImageResult, effectiveOptions);
           break;
         }
         log(`Image Worker 요약 계약 검증 실패 (${imageAttempt}/2): ${imageContractFailure}`, "warn", "main");
@@ -3044,10 +3338,20 @@ module.exports = {
   fetchCodexUsageSnapshot,
   _private: {
     compactSearchResultsForPrompt,
+    compactResearchHandoffForPrompt,
+    compactWriterResultForPrompt,
     rankSearchResultsForPrompt,
+    buildPrompt,
+    buildResearchTitleRetryPrompt,
+    buildWriterRetryPrompt,
+    buildMainReviewPrompt,
+    buildWriterContractRefinementPrompt,
+    buildImageWorkerPrompt,
     buildWriterContract,
     articleSections,
     writerImageContractIssueReason,
-    imageWorkerContractIssueReason
+    imageWorkerContractIssueReason,
+    mergeImageWorkerAttempts,
+    pendingImageWriterResult
   }
 };
