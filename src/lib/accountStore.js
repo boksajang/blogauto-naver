@@ -58,8 +58,10 @@ function normalizeCategory(category) {
 }
 
 function normalizeAccount(account) {
+  // Existing profile folders were named with naverId. Keep this legacy key only
+  // so upgrades reuse the same browser profile; it is never used to fill login forms.
   const naverId = String(account?.naverId || account?.idValue || "").trim();
-  const blogId = String(account?.blogId || account?.naverBlogId || "").trim();
+  const blogId = String(account?.blogId || account?.naverBlogId || naverId || "").trim();
   const id = String(account?.id || "").trim() || makeId("acct");
   const categories = (Array.isArray(account?.categories) ? account.categories : [])
     .map(normalizeCategory)
@@ -67,10 +69,9 @@ function normalizeAccount(account) {
 
   return {
     id,
-    label: String(account?.label || naverId || "Naver 계정").trim(),
+    label: String(account?.label || blogId || naverId || "Naver 계정").trim(),
     naverId,
     blogId,
-    naverPassword: String(account?.naverPassword || account?.password || ""),
     sampleImagePath: String(account?.sampleImagePath || ""),
     sampleImageHash: String(account?.sampleImageHash || ""),
     sampleImageUpdatedAt: String(account?.sampleImageUpdatedAt || ""),
@@ -91,15 +92,14 @@ function normalizeAccount(account) {
 }
 
 function migrateFromSettings(settings) {
-  const naverId = String(settings?.naverId || "").trim();
+  const blogId = String(settings?.blogId || settings?.naverId || "").trim();
   const category = String(settings?.category || "").trim();
   const keyword = String(settings?.keyword || "").trim();
-  if (!naverId && !category) return null;
+  if (!blogId && !category) return null;
 
   return normalizeAccount({
-    label: naverId || "기본 계정",
-    naverId,
-    naverPassword: settings?.naverPassword || "",
+    label: blogId || "기본 계정",
+    blogId,
     checked: true,
     categories: category ? [{ name: category, keyword, checked: true }] : []
   });
@@ -138,7 +138,21 @@ function readAccountStore(runtimeRoot, settingsForMigration = {}) {
   const storePath = getAccountStorePath(runtimeRoot);
   try {
     const raw = fs.readFileSync(storePath, "utf8").replace(/^\uFEFF/, "");
-    return normalizeStore(JSON.parse(raw), settingsForMigration);
+    const parsed = JSON.parse(raw);
+    const normalized = normalizeStore(parsed, settingsForMigration);
+    const containsStoredPassword = (Array.isArray(parsed?.accounts) ? parsed.accounts : [])
+      .some((account) => (
+        Object.prototype.hasOwnProperty.call(account || {}, "naverPassword")
+        || Object.prototype.hasOwnProperty.call(account || {}, "password")
+      ));
+    if (containsStoredPassword) {
+      try {
+        fs.writeFileSync(storePath, `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+      } catch {
+        // Keep using the in-memory credential-free data even if a legacy file is read-only.
+      }
+    }
+    return normalized;
   } catch {
     return normalizeStore({}, settingsForMigration);
   }
@@ -175,7 +189,7 @@ function safeProfileSegment(value) {
 }
 
 function getAccountProfileDir(runtimeRoot, account) {
-  const segment = safeProfileSegment(`${account?.naverId || "naver"}_${account?.id || "profile"}`);
+  const segment = safeProfileSegment(`${account?.naverId || account?.blogId || "naver"}_${account?.id || "profile"}`);
   return path.join(runtimeRoot, "browser-profiles", segment);
 }
 

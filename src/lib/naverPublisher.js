@@ -11,6 +11,18 @@ function sessionExpiredError(message = "네이버 세션이 만료되어 사용�
   return error;
 }
 
+function securityCheckTimeoutError(message = "네이버 보안 확인 또는 캡챠 완료를 제한 시간 안에 확인하지 못했습니다.") {
+  const error = new Error(message);
+  error.code = "SECURITY_CHECK_TIMEOUT";
+  return error;
+}
+
+function authoringRestartRequiredError(stage = "글 작성") {
+  const error = new Error(`${stage} 중 재로그인은 완료됐지만 작성 중이던 임시글을 복구하지 못해 처음부터 다시 작성합니다.`);
+  error.code = "NAVER_AUTHORING_RESTART_REQUIRED";
+  return error;
+}
+
 async function gotoResilient(page, url, options = {}) {
   try {
     await page.goto(url, options);
@@ -34,7 +46,7 @@ function activePage(context, fallbackPage) {
 }
 
 function resolveBlogId(options = {}) {
-  return String(options.blogId || options.naverBlogId || options.naverId || "").trim();
+  return String(options.blogId || options.naverBlogId || "").trim();
 }
 
 function postWriteUrlFor(options = {}) {
@@ -132,26 +144,12 @@ async function humanType(page, selector, text) {
   });
 }
 
-async function humanFill(page, selector, text) {
-  const locator = page.locator(selector).first();
-  await locator.waitFor({ state: "visible", timeout: 15000 });
-  await safeClickLocator(page, locator);
-  await page.keyboard.press("Control+A");
-  await page.keyboard.type(String(text || ""), {
-    delay: 75 + Math.floor(Math.random() * 45)
-  });
-}
-
 async function humanClear(page, selector) {
   const locator = page.locator(selector).first();
   await locator.waitFor({ state: "visible", timeout: 15000 });
   await safeClickLocator(page, locator);
   await page.keyboard.press("Control+A");
   await page.keyboard.press("Backspace");
-}
-
-function normalizeLoginId(value) {
-  return String(value || "").trim().toLowerCase();
 }
 
 async function findVisibleLocator(page, selectors, timeout = 20000) {
@@ -531,16 +529,6 @@ function quotedTextSelector(text) {
   return String(text || "").replace(/\\/g, "\\\\").replace(/"/g, '\\"');
 }
 
-function defaultNaverLoginSubmitSelectors() {
-  return [
-    "#loginBtn_row",
-    "button#loginBtn_row.btn_done",
-    "button.btn_done:has(span[data-i18n='btnLogin'])",
-    ".btn_login",
-    "button[type='submit']"
-  ];
-}
-
 async function visibleCount(page, selector) {
   const locator = page.locator(selector);
   const count = await locator.count().catch(() => 0);
@@ -551,26 +539,6 @@ async function visibleCount(page, selector) {
     }
   }
   return visible;
-}
-
-async function findVisibleLoginInput(page, selector) {
-  const roots = [page, ...page.frames()];
-  for (const root of roots) {
-    const locator = root.locator(selector);
-    const count = await locator.count().catch(() => 0);
-    for (let index = 0; index < count; index += 1) {
-      const item = locator.nth(index);
-      if (await item.isVisible().catch(() => false)) {
-        return item;
-      }
-    }
-  }
-  return null;
-}
-
-async function readInputValue(locator) {
-  if (!locator) return "";
-  return locator.evaluate((element) => String(element.value || "")).catch(() => "");
 }
 
 async function readBodyText(page) {
@@ -645,11 +613,6 @@ async function clickExactPopupButton(page, text) {
 
 function looksLikeSecurityCheck(url, bodyText) {
   const text = String(bodyText || "");
-  return /captcha|자동입력|보안\s*확인|사람입니까|로봇|비정상적인|본인\s*확인|인증번호/i.test(`${url}\n${text}`);
-}
-
-function looksLikeSecurityCheck(url, bodyText) {
-  const text = String(bodyText || "");
   const href = String(url || "");
   const securityHostOrPath = /(?:^|\/\/)nid\.naver\.com/i.test(href)
     || /captcha|protect|security|verification|auth/i.test(href);
@@ -657,32 +620,63 @@ function looksLikeSecurityCheck(url, bodyText) {
   return /captcha|\uC790\uB3D9\s*\uC785\uB825|\uBCF4\uC548\s*\uD655\uC778|\uC0AC\uB78C\uC785\uB2C8\uAE4C|\uB85C\uBD07|\uBE44\uC815\uC0C1\uC801|\uBCF8\uC778\s*\uD655\uC778|\uC778\uC99D\uBC88\uD638/i.test(`${href}\n${text}`);
 }
 
-async function waitForLoginComplete(page, log, timeout = 10 * 60 * 1000) {
+async function waitForSecurityCheckComplete(page, selectors, log, options = {}) {
+  const timeout = Math.max(1, Number(options.securityCheckTimeout) || 10 * 60 * 1000);
+  const pollInterval = Math.max(0, Number(options.securityCheckPollInterval) || 1000);
+  const stableReadsRequired = Math.max(1, Number(options.securityCheckStableReads) || 2);
+  const deadline = Date.now() + timeout;
+  let availableReads = 0;
+
+  while (Date.now() < deadline) {
+    const state = await detectLoginState(page, selectors);
+    if (state.state === "security_check") {
+      availableReads = 0;
+    } else if (state.state === "login_required") {
+      log("네이버 보안 확인 이후 로그인 화면으로 이동했습니다.", "warn");
+      return state;
+    } else {
+      availableReads += 1;
+      if (availableReads >= stableReadsRequired) {
+        log("네이버 보안 확인 완료를 확인했습니다. 중단한 작업을 이어갑니다.");
+        return state;
+      }
+    }
+    await sleep(pollInterval);
+  }
+
+  throw securityCheckTimeoutError();
+}
+
+async function waitForLoginComplete(page, log, timeout = 10 * 60 * 1000, selectors = {}, pollInterval = 1000) {
   const deadline = Date.now() + timeout;
   let securityLogged = false;
   let loginLogged = false;
+  let availableReads = 0;
 
   while (Date.now() < deadline) {
-    const url = page.url();
-    const bodyText = await readBodyText(page);
-    const loginInputs = await visibleCount(page, "#id, #pw");
+    const state = await detectLoginState(page, selectors);
 
-    if (looksLikeSecurityCheck(url, bodyText)) {
+    if (state.state === "security_check") {
+      availableReads = 0;
       if (!securityLogged) {
         log("네이버 보안 확인이 표시되었습니다. 브라우저에서 사용자가 직접 완료하면 자동으로 이어갑니다.", "warn");
         securityLogged = true;
       }
-    } else if (/nid\.naver\.com\/nidlogin/i.test(url) || loginInputs > 0) {
+    } else if (state.state === "login_required") {
+      availableReads = 0;
       if (!loginLogged) {
         log("네이버 로그인 완료를 기다리는 중입니다.");
         loginLogged = true;
       }
     } else {
-      log("네이버 로그인 완료를 확인했습니다.");
-      return;
+      availableReads += 1;
+      if (availableReads >= 2) {
+        log("네이버 로그인 완료를 확인했습니다.");
+        return state;
+      }
     }
 
-    await sleep(1000);
+    await sleep(Math.max(0, Number(pollInterval) || 0));
   }
 
   throw new Error("네이버 로그인 또는 보안 확인 완료를 제한 시간 안에 확인하지 못했습니다.");
@@ -703,38 +697,85 @@ async function detectLoginState(page, selectors = {}) {
   return { state: "available", url };
 }
 
-async function assertNaverSessionActive(page, selectors, log, stage = "작업") {
-  const state = await detectLoginState(page, selectors);
+async function assertNaverSessionActive(page, selectors, log, stage = "작업", options = {}) {
+  let state = await detectLoginState(page, selectors);
+  let sessionRecovered = false;
+  let loginWasRequired = false;
   if (state.state === "security_check") {
-    log(`${stage} 중 네이버 보안 확인/캡챠 화면으로 이동했습니다. 계정 세션을 만료 처리합니다.`, "warn");
-    throw sessionExpiredError("네이버 보안 확인 또는 캡챠가 표시되어 계정 세션이 만료되었습니다.");
+    log(`${stage} 중 네이버 보안 확인/캡챠 화면으로 이동했습니다. 브라우저에서 완료하면 작업을 이어갑니다.`, "warn");
+    state = await waitForSecurityCheckComplete(page, selectors, log, options);
+    sessionRecovered = true;
+  }
+  if (state.state === "login_required") {
+    if (options.recoverSessionDuringWork === true) {
+      loginWasRequired = true;
+      log(`${stage} 중 네이버 로그인이 다시 필요합니다. 현재 창에서 아이디와 비밀번호를 직접 입력하면 작업을 이어갑니다.`, "warn");
+      const recoveryOptions = { ...options, failOnLoginRequired: false };
+      await completeLoginIfNeeded(page, selectors, recoveryOptions, log);
+      state = await detectLoginState(page, selectors);
+      sessionRecovered = true;
+    }
   }
   if (state.state === "login_required") {
     log(`${stage} 중 네이버 로그인 화면으로 이동했습니다. 계정 세션을 만료 처리합니다.`, "warn");
     throw sessionExpiredError("네이버 로그인 화면으로 이동해 계정 세션이 만료되었습니다.");
   }
+  if (sessionRecovered && options.recoverSessionDuringWork === true) {
+    const restored = await restorePostWriteAfterSessionRecovery(
+      page,
+      selectors,
+      { ...options, startFreshAfterRecovery: loginWasRequired },
+      log,
+      stage
+    );
+    if (options.restartAuthoringWhenDraftMissing !== false
+      && (loginWasRequired || restored.navigated || !restored.hasDraft)) {
+      throw authoringRestartRequiredError(stage);
+    }
+  }
 }
 
-async function verifyPostWriteSession(context, page, selectors, postWriteUrl, log) {
-  const currentPage = await gotoResilientInContext(context, page, postWriteUrl, {
+async function verifyPostWriteSession(context, page, selectors, options, postWriteUrl, log) {
+  let currentPage = await gotoResilientInContext(context, page, postWriteUrl, {
     waitUntil: "domcontentloaded",
     timeout: 60000
   });
-  await sleep(1200);
-  const state = await detectLoginState(currentPage, selectors);
-  if (state.state === "security_check") {
-    return { status: "expired", reason: "security_check", url: state.url, page: currentPage };
-  }
-  if (state.state === "login_required") {
-    return { status: "expired", reason: "login_required", url: state.url, page: currentPage };
-  }
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    await sleep(1200);
+    let state = await detectLoginState(currentPage, selectors);
+    if (state.state === "security_check") {
+      log("블로그 글쓰기 URL 진입 중 네이버 보안 확인이 표시되었습니다. 완료하면 자동으로 재확인합니다.", "warn");
+      state = await waitForSecurityCheckComplete(currentPage, selectors, log, options);
+      currentPage = activePage(context, currentPage);
+    }
+    if (state.state === "login_required") {
+      if (options.interactiveLogin) {
+        await completeLoginIfNeeded(currentPage, selectors, options, log);
+        currentPage = activePage(context, currentPage);
+        currentPage = await gotoResilientInContext(context, currentPage, postWriteUrl, {
+          waitUntil: "domcontentloaded",
+          timeout: 60000
+        });
+        continue;
+      }
+      return { status: "expired", reason: "login_required", url: state.url, page: currentPage };
+    }
+    if (!matchesTargetPostWriteUrl(currentPage.url(), postWriteUrl)) {
+      currentPage = await gotoResilientInContext(context, currentPage, postWriteUrl, {
+        waitUntil: "domcontentloaded",
+        timeout: 60000
+      });
+      continue;
+    }
 
-  log("블로그 글쓰기 URL 접근과 로그인 세션을 확인했습니다.");
-  return { status: "valid", reason: "postwrite_session_available", url: state.url, page: currentPage };
+    log("블로그 글쓰기 URL 접근과 로그인 세션을 확인했습니다.");
+    return { status: "valid", reason: "postwrite_session_available", url: currentPage.url(), page: currentPage };
+  }
+  throw new Error(`네이버 보안 확인 후 블로그 글쓰기 URL로 복귀하지 못했습니다. 현재 URL: ${currentPage.url()}`);
 }
 
 async function verifyPostWriteEditorSession(context, page, selectors, options, postWriteUrl, log) {
-  const result = await verifyPostWriteSession(context, page, selectors, postWriteUrl, log);
+  const result = await verifyPostWriteSession(context, page, selectors, options, postWriteUrl, log);
   if (result.status !== "valid") return result;
   const currentPage = result.page || page;
   log("블로그 글쓰기 편집기 화면 확인을 시작합니다.");
@@ -760,21 +801,17 @@ async function verifyOpenNaverSession(options) {
   const selectors = {
     idInput: "#id",
     passwordInput: "#pw",
-    loginSubmit: defaultNaverLoginSubmitSelectors(),
     titleInput: "textarea[placeholder*='?쒕ぉ'], input[placeholder*='?쒕ぉ'], .se-title-text [contenteditable='true'], .se-title [contenteditable='true'], .se-title-text textarea, .se-title-text input",
     ...parseDomNotes(options.domNotes)
   };
   const postWriteUrl = postWriteUrlFor(options);
   let page = activePostWritePage(context, options.preparedPage || options.page || null, postWriteUrl);
   if (!page) page = await context.newPage();
-  const loginState = await detectLoginState(page, selectors);
+  let loginState = await detectLoginState(page, selectors);
   if (loginState.state === "security_check") {
-    if (options.interactiveLogin) {
-      await completeLoginIfNeeded(page, selectors, options, log);
-      page = activePostWritePage(context, page, postWriteUrl);
-    } else {
-    return { status: "expired", reason: "security_check", url: loginState.url, page };
-    }
+    await completeLoginIfNeeded(page, selectors, options, log);
+    page = activePostWritePage(context, page, postWriteUrl);
+    loginState = await detectLoginState(page, selectors);
   }
   if (loginState.state === "login_required") {
     if (options.interactiveLogin) {
@@ -824,7 +861,6 @@ async function prepareNaverPostWrite(options) {
   const selectors = {
     idInput: "#id",
     passwordInput: "#pw",
-    loginSubmit: defaultNaverLoginSubmitSelectors(),
     titleInput: "textarea[placeholder*='제목'], input[placeholder*='제목'], .se-title-text [contenteditable='true'], .se-title [contenteditable='true'], .se-title-text textarea, .se-title-text input",
     ...parseDomNotes(options.domNotes)
   };
@@ -873,65 +909,15 @@ async function prepareNaverPostWrite(options) {
 }
 
 async function completeLoginIfNeeded(page, selectors, options, log) {
-  const url = page.url();
-  const bodyText = await readBodyText(page);
-  const idInputs = await visibleCount(page, selectors.idInput);
-  const passwordInputs = await visibleCount(page, selectors.passwordInput);
-
-  if (looksLikeSecurityCheck(url, bodyText)) {
-    if (options.failOnLoginRequired) {
-      throw sessionExpiredError("네이버 보안 확인이 필요해 자동 발행에서 해당 계정을 건너뜁니다.");
-    }
+  let state = await detectLoginState(page, selectors);
+  if (state.state === "security_check") {
     log("네이버 보안 확인이 표시되었습니다. 브라우저에서 사용자가 직접 완료하면 자동으로 이어갑니다.", "warn");
-    await waitForLoginComplete(page, log);
-    return true;
+    state = await waitForSecurityCheckComplete(page, selectors, log, options);
   }
 
-  if (/nid\.naver\.com\/nidlogin/i.test(url) || idInputs > 0 || passwordInputs > 0) {
-    if (idInputs > 0 && passwordInputs > 0) {
-      const idInput = await findVisibleLoginInput(page, selectors.idInput);
-      const passwordInput = await findVisibleLoginInput(page, selectors.passwordInput);
-      const existingId = (await readInputValue(idInput)).trim();
-      const existingPassword = await readInputValue(passwordInput);
-      const expectedId = normalizeLoginId(options.naverId);
-      const existingMatchesExpectedId = Boolean(existingId && expectedId && normalizeLoginId(existingId) === expectedId);
-      const hasDifferentPrefilledId = Boolean(existingId && expectedId && !existingMatchesExpectedId);
-      const hasPrefilledCredentials = Boolean(existingId && existingPassword && existingMatchesExpectedId);
-
-      if (options.failOnLoginRequired && !hasPrefilledCredentials) {
-        throw sessionExpiredError();
-      }
-      if (!existingId || hasDifferentPrefilledId) {
-        if (!options.naverId) throw sessionExpiredError();
-        if (hasDifferentPrefilledId) {
-          log("네이버 로그인 입력창에 다른 ID가 채워져 있어 현재 확인 계정 ID로 다시 입력합니다.", "warn");
-        }
-        log("네이버 로그인 ID 입력칸이 비어 있어 저장된 ID를 입력합니다.");
-        await humanFill(page, selectors.idInput, options.naverId);
-      }
-      if (!existingPassword || hasDifferentPrefilledId) {
-        if (!options.naverPassword) throw sessionExpiredError();
-        if (hasDifferentPrefilledId) {
-          log("다른 ID의 비밀번호가 남아 있을 수 있어 현재 확인 계정 비밀번호로 다시 입력합니다.", "warn");
-        }
-        log("네이버 로그인 비밀번호 입력칸이 비어 있어 저장된 비밀번호를 입력합니다.");
-        await humanFill(page, selectors.passwordInput, options.naverPassword);
-      }
-
-      if (hasPrefilledCredentials) {
-        log("네이버 로그인 입력창에 ID/PW가 이미 채워져 있어 로그인 버튼만 클릭합니다.");
-      } else {
-        log("네이버 로그인 입력창을 확인했습니다. 저장된 ID/PW로 로그인을 진행합니다.");
-      }
-      const submitted = await clickFirstVisible(page, selectors.loginSubmit, "Naver 로그인 제출 버튼", log);
-      if (!submitted) {
-        throw new Error("Naver 로그인 제출 버튼을 찾을 수 없습니다. 로그인 화면 DOM 확인이 필요합니다.");
-      }
-      log("로그인 버튼 클릭 완료. 보안 확인이 표시되면 사용자가 직접 처리할 수 있습니다.");
-    } else {
-      log("네이버 로그인 완료를 기다리는 중입니다.");
-    }
-    await waitForLoginComplete(page, log);
+  if (state.state === "login_required") {
+    log("네이버 로그인 창에서 아이디와 비밀번호를 직접 입력해 주세요. 로그인 완료까지 현재 창을 유지합니다.", "warn");
+    await waitForLoginComplete(page, log, options.securityCheckTimeout || 10 * 60 * 1000, selectors);
     return true;
   }
 
@@ -956,6 +942,26 @@ async function dismissExistingDraftDialog(page, log) {
   log("기존 작성 실패/임시글 안내를 취소하고 새 글 작성을 계속합니다.");
   await sleep(800);
   return true;
+}
+
+async function resumeExistingDraftDialog(page, log) {
+  const bodyText = await readBodyText(page);
+  const hasDraftText = /작성\s*중|작성하던|임시\s*저장|이어서|불러오|저장된\s*글/i.test(bodyText);
+  const hasPopup = await hasVisibleEditorPopup(page);
+  if (!hasDraftText && !hasPopup) {
+    return false;
+  }
+
+  const resumeLabels = ["이어서 작성", "이어서 쓰기", "이어쓰기", "불러오기"];
+  for (const label of resumeLabels) {
+    if (await clickExactPopupButton(page, label)) {
+      log("재로그인 후 네이버의 기존 작성글을 불러와 이어서 작성합니다.");
+      await sleep(1000);
+      return true;
+    }
+  }
+
+  return false;
 }
 
 async function selectNativeCategory(page, category) {
@@ -1292,13 +1298,19 @@ async function waitForPostWriteTitle(page, selectors, options, postWriteUrl, log
     }
     wrongUrlCount = 0;
 
-    if (await dismissExistingDraftDialog(page, log)) {
+    const draftDialogHandled = options.resumeDraftAfterSessionRecovery === true
+      ? await resumeExistingDraftDialog(page, log)
+      : await dismissExistingDraftDialog(page, log);
+    if (draftDialogHandled) {
       deadline = Date.now() + timeout;
       continue;
     }
 
     if (await hasVisibleEditorPopup(page)) {
-      log("기존 작성글 안내 팝업이 남아 있어 편집기 입력을 대기합니다. 취소를 누르면 자동으로 이어갑니다.", "warn");
+      const popupGuidance = options.resumeDraftAfterSessionRecovery === true
+        ? "기존 작성글 안내 팝업이 남아 있습니다. 작성 내용을 보존하려면 브라우저에서 이어서 작성 또는 불러오기를 선택하세요."
+        : "기존 작성글 안내 팝업이 남아 있어 편집기 입력을 대기합니다. 취소를 누르면 자동으로 이어갑니다.";
+      log(popupGuidance, "warn");
       await sleep(1000);
       continue;
     }
@@ -1327,6 +1339,43 @@ async function waitForPostWriteTitle(page, selectors, options, postWriteUrl, log
 
   await saveEditorDiagnostics(page, options, log);
   throw new Error("블로그 글쓰기 편집기를 제한 시간 안에 찾지 못했습니다. Naver Editor DOM notes 확인이 필요합니다.");
+}
+
+async function restorePostWriteAfterSessionRecovery(page, selectors, options, log, stage) {
+  if (options.restorePostWriteAfterRecovery === false || !options.postWriteUrl) {
+    return { hasDraft: true, navigated: false };
+  }
+
+  const startFresh = options.startFreshAfterRecovery === true;
+  log(startFresh
+    ? `${stage} 중 재로그인이 완료되었습니다. 같은 창에서 새 글쓰기 화면을 복구합니다.`
+    : `${stage} 중 보안 확인이 완료되었습니다. 같은 창에서 작성 중이던 글을 복구합니다.`);
+  let navigated = false;
+  if (!matchesTargetPostWriteUrl(page.url(), options.postWriteUrl)) {
+    await gotoResilient(page, options.postWriteUrl, { waitUntil: "domcontentloaded", timeout: 60000 });
+    navigated = true;
+  }
+  const titleLocator = await waitForPostWriteTitle(
+    page,
+    selectors,
+    {
+      ...options,
+      failOnLoginRequired: false,
+      resumeDraftAfterSessionRecovery: !startFresh
+    },
+    options.postWriteUrl,
+    log,
+    options.editorCheckTimeout || 5 * 60 * 1000
+  );
+  const hasDraft = await hasExistingDraftContent(page, titleLocator);
+  if (hasDraft && !startFresh) {
+    log("작성 중이던 제목/본문 또는 이미지를 확인했습니다. 중단된 단계부터 계속합니다.");
+  } else if (hasDraft) {
+    log("새 글쓰기 화면에 기존 내용이 남아 있어 작성 단계를 다시 시작합니다.", "warn");
+  } else {
+    log("작성 중이던 내용이 편집기에 남아 있지 않습니다. 같은 창에서 저장된 생성 결과를 처음부터 다시 입력합니다.", "warn");
+  }
+  return { hasDraft, titleLocator, navigated };
 }
 
 async function collectImageComponentLocators(page) {
@@ -1873,13 +1922,13 @@ async function insertArticleWithImages(page, selectors, article, bodyImages, opt
   const blocks = splitArticleBlocks(article);
   const bodyTypingLog = () => {};
   log("본문 글쓰기 시작");
-  await assertNaverSessionActive(page, selectors, log, "본문 입력 시작");
+  await assertNaverSessionActive(page, selectors, log, "본문 입력 시작", options.sessionRecoveryOptions);
   const editor = await findLowerVisibleLocator(page, bodyEditorSelectors(selectors), 30000);
   await safeClickLocator(page, editor, log, "본문 입력 영역");
   await page.keyboard.press("End").catch(() => {});
 
   for (const block of blocks) {
-    await assertNaverSessionActive(page, selectors, log, "본문 입력");
+    await assertNaverSessionActive(page, selectors, log, "본문 입력", options.sessionRecoveryOptions);
     if (block.type === "paragraph") {
       await typeBodyParagraph(page, block.text, options, bodyTypingLog);
       await page.keyboard.press("Enter");
@@ -1956,14 +2005,14 @@ function looksLikePublishComplete(url, bodyText) {
   return /blog\.naver\.com/i.test(url) && !/postwrite/i.test(url) && /PostView|Redirect|postView/i.test(url);
 }
 
-async function waitForPublishCompletion(page, selectors, log, timeout = 60000) {
+async function waitForPublishCompletion(page, selectors, log, timeout = 60000, sessionRecoveryOptions = {}) {
   const deadline = Date.now() + timeout;
   let confirmClicks = 0;
 
   while (Date.now() < deadline) {
     const url = page.url();
     const bodyText = await readBodyText(page);
-    await assertNaverSessionActive(page, selectors, log, "발행 완료 확인");
+    await assertNaverSessionActive(page, selectors, log, "발행 완료 확인", sessionRecoveryOptions);
     if (looksLikePublishComplete(url, bodyText)) {
       log("Naver 발행 완료를 확인했습니다.");
       return;
@@ -2276,7 +2325,6 @@ async function publishToNaver(options) {
   const selectors = {
     idInput: "#id",
     passwordInput: "#pw",
-    loginSubmit: defaultNaverLoginSubmitSelectors(),
     titleInput: "textarea[placeholder*='제목'], input[placeholder*='제목'], .se-title-text [contenteditable='true'], .se-title [contenteditable='true'], .se-title-text textarea, .se-title-text input",
     bodyEditor: ".se-section-text .se-module-text, .se-module-text p, .se-module-text, .se-section-text [contenteditable='true'], div[contenteditable='true']",
     imageButton: [
@@ -2409,6 +2457,16 @@ async function publishToNaver(options) {
       ? options.preparedPage
       : (activePage(context, null) || await context.newPage());
     const resumeExistingDraft = options.resumeExistingDraft === true && options.preparedContext;
+    let reuseExistingDraft = resumeExistingDraft;
+    const sessionRecoveryOptions = {
+      ...options,
+      postWriteUrl,
+      interactiveLogin: true,
+      failOnLoginRequired: false,
+      recoverSessionDuringWork: true,
+      resumeDraftAfterSessionRecovery: true,
+      restartAuthoringWhenDraftMissing: true
+    };
 
     if (resumeExistingDraft) {
       page = activePostWritePage(context, page, postWriteUrl);
@@ -2419,7 +2477,7 @@ async function publishToNaver(options) {
           timeout: 60000
         });
       }
-      await completeLoginIfNeeded(page, selectors, options, log);
+      await completeLoginIfNeeded(page, selectors, sessionRecoveryOptions, log);
     } else if (options.preparedContext) {
       log("이미 열려 있는 글쓰기 브라우저 세션을 사용합니다.");
       page = await gotoResilientInContext(context, page, postWriteUrl, {
@@ -2427,7 +2485,7 @@ async function publishToNaver(options) {
         timeout: 60000
       });
       log("발행 단계에서 블로그 글쓰기 URL로 다시 접근했습니다.");
-      await completeLoginIfNeeded(page, selectors, options, log);
+      await completeLoginIfNeeded(page, selectors, sessionRecoveryOptions, log);
     } else {
       await gotoResilient(page, "https://naver.com", { waitUntil: "domcontentloaded", timeout: 45000 });
       log("naver.com 접속 완료");
@@ -2437,7 +2495,7 @@ async function publishToNaver(options) {
         timeout: 60000
       });
       log("블로그 글쓰기 URL 접근을 시도했습니다.");
-      const didLogin = await completeLoginIfNeeded(page, selectors, options, log);
+      const didLogin = await completeLoginIfNeeded(page, selectors, sessionRecoveryOptions, log);
       if (didLogin) {
         page = await gotoResilientInContext(context, page, postWriteUrl, {
           waitUntil: "domcontentloaded",
@@ -2449,57 +2507,67 @@ async function publishToNaver(options) {
       }
     }
 
-    const titleLocator = await waitForPostWriteTitle(page, selectors, options, postWriteUrl, log);
-    const useExistingDraft = resumeExistingDraft && await hasExistingDraftContent(page, titleLocator);
+    for (;;) {
+      let finalPublishAttempted = false;
+      try {
+    const titleLocator = await waitForPostWriteTitle(
+      page,
+      selectors,
+      { ...sessionRecoveryOptions, resumeDraftAfterSessionRecovery: false },
+      postWriteUrl,
+      log
+    );
+    const useExistingDraft = reuseExistingDraft && await hasExistingDraftContent(page, titleLocator);
     if (useExistingDraft) {
       log("Naver 글쓰기 화면에 작성된 제목/본문 또는 이미지가 있어 재입력 없이 발행 단계로 이어갑니다.");
     } else {
-      if (resumeExistingDraft) {
+      if (reuseExistingDraft) {
         log("재사용할 작성 내용이 보이지 않아 저장된 생성 결과로 다시 입력합니다.", "warn");
       }
-    await assertNaverSessionActive(page, selectors, log, "제목 입력 전");
+    await assertNaverSessionActive(page, selectors, log, "제목 입력 전", sessionRecoveryOptions);
     log("블로그 글쓰기 화면 로드를 확인했습니다.");
     await typeIntoLocator(page, titleLocator, options.title);
-    await assertNaverSessionActive(page, selectors, log, "제목 입력");
+    await assertNaverSessionActive(page, selectors, log, "제목 입력", sessionRecoveryOptions);
     await insertTitleQuoteAtTop(page, selectors, options.title, titleLocator, log);
-    await assertNaverSessionActive(page, selectors, log, "타이틀 인용구 입력");
+    await assertNaverSessionActive(page, selectors, log, "타이틀 인용구 입력", sessionRecoveryOptions);
 
     if (options.titleImagePath) {
       if (!selectors.imageButton) {
         throw new Error("타이틀 이미지 삽입용 imageButton selector가 필요합니다.");
       }
-      await assertNaverSessionActive(page, selectors, log, "타이틀 이미지 삽입 전");
+      await assertNaverSessionActive(page, selectors, log, "타이틀 이미지 삽입 전", sessionRecoveryOptions);
       const titleImageComponent = await insertImageByButton(page, selectors.imageButton, options.titleImagePath);
       await ensureAiMarkForImageComponent(page, titleImageComponent, log, "타이틀 이미지");
       log("타이틀 이미지 삽입 완료");
-      await assertNaverSessionActive(page, selectors, log, "타이틀 이미지 삽입");
+      await assertNaverSessionActive(page, selectors, log, "타이틀 이미지 삽입", sessionRecoveryOptions);
       await prepareBodyAfterTitleImage(page, selectors, log);
     }
 
-    await assertNaverSessionActive(page, selectors, log, "본문 입력 전");
+    await assertNaverSessionActive(page, selectors, log, "본문 입력 전", sessionRecoveryOptions);
     await insertArticleWithImages(
       page,
       selectors,
       stripDuplicateTitleLine(options.article, options.title),
       options.bodyImages || [],
       {
-        breakSentencesInBody: options.breakSentencesInBody !== false
+        breakSentencesInBody: options.breakSentencesInBody !== false,
+        sessionRecoveryOptions
       },
       log
     );
-    await assertNaverSessionActive(page, selectors, log, "본문 입력 완료");
+    await assertNaverSessionActive(page, selectors, log, "본문 입력 완료", sessionRecoveryOptions);
 
     const saveButton = selectors.saveButton
       ? await findVisibleLocator(page, selectors.saveButton, 2500).catch(() => null)
       : null;
     if (saveButton) {
-      await assertNaverSessionActive(page, selectors, log, "저장 전");
+      await assertNaverSessionActive(page, selectors, log, "저장 전", sessionRecoveryOptions);
       await safeClickLocator(page, saveButton, log, "저장 버튼");
       await sleep(1500);
-      await assertNaverSessionActive(page, selectors, log, "저장");
+      await assertNaverSessionActive(page, selectors, log, "저장", sessionRecoveryOptions);
     }
 
-    await assertNaverSessionActive(page, selectors, log, "발행 설정 열기 전");
+    await assertNaverSessionActive(page, selectors, log, "발행 설정 열기 전", sessionRecoveryOptions);
     }
     const publishOpened = await clickPublishSettingsButton(page, selectors, log);
     if (!publishOpened) {
@@ -2510,33 +2578,91 @@ async function publishToNaver(options) {
       throw new Error("발행 설정 레이어가 열리지 않았습니다. 첫 번째 발행 버튼 DOM 확인이 필요합니다.");
     }
     log("발행 설정 화면을 열었습니다.");
-    await assertNaverSessionActive(page, selectors, log, "발행 설정");
+    await assertNaverSessionActive(page, selectors, log, "발행 설정", sessionRecoveryOptions);
 
     await applyPublishVisibility(page, selectors, options, log);
-    await assertNaverSessionActive(page, selectors, log, "공개 설정");
+    await assertNaverSessionActive(page, selectors, log, "공개 설정", sessionRecoveryOptions);
     await applyPublishSchedule(page, selectors, options, log);
-    await assertNaverSessionActive(page, selectors, log, "발행 시간 설정");
+    await assertNaverSessionActive(page, selectors, log, "발행 시간 설정", sessionRecoveryOptions);
 
     if (selectors.categoryButton && options.category) {
-      await assertNaverSessionActive(page, selectors, log, "카테고리 선택 전");
+      await assertNaverSessionActive(page, selectors, log, "카테고리 선택 전", sessionRecoveryOptions);
       await selectCategory(page, selectors, options.category, log);
-      await assertNaverSessionActive(page, selectors, log, "카테고리 선택");
+      await assertNaverSessionActive(page, selectors, log, "카테고리 선택", sessionRecoveryOptions);
     }
 
     if (!useExistingDraft && selectors.tagInput && Array.isArray(options.tags)) {
-      await assertNaverSessionActive(page, selectors, log, "태그 입력 전");
+      await assertNaverSessionActive(page, selectors, log, "태그 입력 전", sessionRecoveryOptions);
       await inputTags(page, selectors.tagInput, options.tags, log);
-      await assertNaverSessionActive(page, selectors, log, "태그 입력");
+      await assertNaverSessionActive(page, selectors, log, "태그 입력", sessionRecoveryOptions);
     }
 
-    await assertNaverSessionActive(page, selectors, log, "최종 발행 전");
+    await assertNaverSessionActive(page, selectors, log, "최종 발행 전", sessionRecoveryOptions);
     await sleep(1000);
+    finalPublishAttempted = true;
     const finalPublished = await clickFinalPublishButton(page, selectors, log, options);
     if (!finalPublished) {
       throw new Error("최종 발행 버튼을 찾을 수 없습니다. 발행 화면 DOM 확인이 필요합니다.");
     }
-    await assertNaverSessionActive(page, selectors, log, "최종 발행");
-    await waitForPublishCompletion(page, selectors, log);
+    const publishCompletionRecoveryOptions = {
+      ...sessionRecoveryOptions,
+      restorePostWriteAfterRecovery: false,
+      restartAuthoringWhenDraftMissing: false
+    };
+    await assertNaverSessionActive(page, selectors, log, "최종 발행", publishCompletionRecoveryOptions);
+    await waitForPublishCompletion(page, selectors, log, 60000, publishCompletionRecoveryOptions);
+    break;
+      } catch (error) {
+        let recoveryError = error;
+        if (recoveryError?.code !== "NAVER_AUTHORING_RESTART_REQUIRED") {
+          const interruptedState = await detectLoginState(page, selectors).catch(() => ({ state: "available" }));
+          if (interruptedState.state !== "security_check" && interruptedState.state !== "login_required") {
+            throw recoveryError;
+          }
+          log("자동 입력 동작 중 네이버 보안 확인 또는 로그인 화면 전환을 감지했습니다. 현재 창에서 복구합니다.", "warn");
+          const interruptedRecoveryOptions = finalPublishAttempted
+            ? {
+                ...sessionRecoveryOptions,
+                restorePostWriteAfterRecovery: false,
+                restartAuthoringWhenDraftMissing: false
+              }
+            : sessionRecoveryOptions;
+          let recoveredSuccessfully = false;
+          try {
+            await assertNaverSessionActive(page, selectors, log, "자동 입력 복구", interruptedRecoveryOptions);
+            recoveredSuccessfully = true;
+          } catch (caughtRecoveryError) {
+            recoveryError = caughtRecoveryError;
+          }
+          if (finalPublishAttempted && recoveredSuccessfully) {
+            await waitForPublishCompletion(page, selectors, log, 60000, interruptedRecoveryOptions);
+            break;
+          }
+          if (!recoveredSuccessfully && recoveryError?.code !== "NAVER_AUTHORING_RESTART_REQUIRED") {
+            throw recoveryError;
+          }
+          if (recoveredSuccessfully) {
+            recoveryError = authoringRestartRequiredError("자동 입력");
+          }
+        }
+        log(recoveryError.message, "warn");
+        reuseExistingDraft = false;
+        page = activePostWritePage(context, page, postWriteUrl);
+        await gotoResilient(page, "https://naver.com", { waitUntil: "domcontentloaded", timeout: 45000 });
+        page = await gotoResilientInContext(context, page, postWriteUrl, {
+          waitUntil: "domcontentloaded",
+          timeout: 60000
+        });
+        await waitForPostWriteTitle(
+          page,
+          selectors,
+          { ...options, resumeDraftAfterSessionRecovery: false, failOnLoginRequired: false },
+          postWriteUrl,
+          log
+        );
+        log("브라우저를 닫지 않고 저장된 제목·본문·이미지로 글 작성을 처음부터 다시 시작합니다.", "warn");
+      }
+    }
   } finally {
     if (ownsContext) {
       await context.close();
@@ -2569,7 +2695,6 @@ async function checkNaverSession(options) {
     const selectors = {
       idInput: "#id",
       passwordInput: "#pw",
-      loginSubmit: defaultNaverLoginSubmitSelectors(),
       titleInput: "textarea[placeholder*='제목'], input[placeholder*='제목'], .se-title-text [contenteditable='true'], .se-title [contenteditable='true'], .se-title-text textarea, .se-title-text input",
       ...parseDomNotes(options.domNotes)
     };
@@ -2597,29 +2722,27 @@ async function checkNaverSession(options) {
     const verifyTarget = async () => {
       const result = options.requireEditor === true
         ? await verifyPostWriteEditorSession(context, page, selectors, options, targetUrl, log)
-        : await verifyPostWriteSession(context, page, selectors, targetUrl, log);
+        : await verifyPostWriteSession(context, page, selectors, options, targetUrl, log);
       page = result.page || page;
       return result;
     };
 
     const loginState = await detectLoginState(page, selectors);
     if (loginState.state === "security_check") {
-      if (options.interactiveLogin) {
-        log("네이버 보안 확인 완료를 기다립니다.", "warn");
-        await waitForLoginComplete(page, log);
-        const result = await verifyTarget();
-        return withOpenSession(result);
+      log("네이버 보안 확인 완료를 기다립니다. 완료하면 글쓰기 화면을 다시 확인합니다.", "warn");
+      const stateAfterSecurityCheck = await waitForSecurityCheckComplete(page, selectors, log, options);
+      if (stateAfterSecurityCheck.state === "login_required") {
+        if (!options.interactiveLogin) {
+          return { status: "expired", reason: "login_required" };
+        }
+        await completeLoginIfNeeded(page, selectors, options, log);
       }
-      return { status: "expired", reason: "security_check" };
+      const result = await verifyTarget();
+      return withOpenSession(result);
     }
     if (loginState.state === "login_required") {
       if (options.interactiveLogin) {
-        if (options.naverPassword) {
-          await completeLoginIfNeeded(page, selectors, options, log);
-        } else {
-          log("네이버 로그인 완료를 기다립니다.");
-          await waitForLoginComplete(page, log);
-        }
+        await completeLoginIfNeeded(page, selectors, options, log);
         const result = await verifyTarget();
         return withOpenSession(result);
       }
@@ -2644,6 +2767,16 @@ module.exports = {
     isPublishSettingsButtonMeta,
     isReservedPostListButtonText,
     clickPublishSettingsButton,
-    waitForPublishSettingsLayer
+    waitForPublishSettingsLayer,
+    sessionExpiredError,
+    securityCheckTimeoutError,
+    authoringRestartRequiredError,
+    looksLikeSecurityCheck,
+    detectLoginState,
+    waitForSecurityCheckComplete,
+    waitForLoginComplete,
+    assertNaverSessionActive,
+    completeLoginIfNeeded,
+    verifyPostWriteSession
   }
 };

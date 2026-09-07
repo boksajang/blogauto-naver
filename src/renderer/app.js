@@ -116,6 +116,10 @@ function selectedAccount() {
   return ensureSelectedAccount();
 }
 
+function accountDisplayName(account) {
+  return String(account?.label || account?.blogId || account?.naverId || "Naver 계정");
+}
+
 function setRunState(status, detail = "") {
   const badge = $("#runState");
   const classMap = {
@@ -324,7 +328,7 @@ function updateSessionNotice() {
   } else {
     const names = accounts
       .filter((account) => account.sessionStatus !== "valid")
-      .map((account) => account.label || account.naverId || "Naver 계정")
+      .map((account) => accountDisplayName(account))
       .join(", ");
     text.textContent = `로그인이 필요한 계정: ${names}. 계정별로 선택 후 세션 확인을 진행해 주세요.`;
   }
@@ -354,7 +358,7 @@ async function checkAccountSession(account, options = {}) {
   setRunState("generating", "로그인 완료 대기 중");
   addLog({
     level: "info",
-    message: `${account.label || account.naverId} 계정의 브라우저가 열리면 로그인 완료까지 진행해 주세요.`,
+    message: `${accountDisplayName(account)} 계정의 브라우저가 열리면 아이디와 비밀번호를 직접 입력해 로그인해 주세요.`,
     at: new Date().toISOString()
   });
   try {
@@ -393,7 +397,7 @@ async function checkAccountSession(account, options = {}) {
         const pending = state.autoPendingSessionTarget;
         addLog({
           level: "info",
-          message: `${pending.accountLabel || account.naverId} / ${pending.categoryName} 대기 작업을 다시 시작합니다.`,
+          message: `${pending.accountLabel || accountDisplayName(account)} / ${pending.categoryName} 대기 작업을 다시 시작합니다.`,
           at: new Date().toISOString()
         });
         const startKey = pending.key;
@@ -416,7 +420,7 @@ async function checkAccountSession(account, options = {}) {
           const startKey = autoTargetKey(autoTarget);
           addLog({
             level: "info",
-            message: `${autoTarget.account.label || autoTarget.account.naverId} / ${autoTarget.category.name} 자동 작업을 바로 시작합니다.`,
+            message: `${accountDisplayName(autoTarget.account)} / ${autoTarget.category.name} 자동 작업을 바로 시작합니다.`,
             at: new Date().toISOString()
           });
           window.setTimeout(() => {
@@ -490,7 +494,7 @@ async function checkSelectedAccountSessions() {
     for (const account of accounts) {
       addLog({
         level: "info",
-        message: `${account.label || account.naverId} 계정 세션 확인을 시작합니다.`,
+        message: `${accountDisplayName(account)} 계정 세션 확인을 시작합니다.`,
         at: new Date().toISOString()
       });
       await checkAccountSession(account, { resumeAuto: false, startAuto: false, includeTistorySession: false });
@@ -743,8 +747,8 @@ function renderAccounts() {
       <button type="button" class="drag-handle account-drag-handle" draggable="true" aria-label="계정 순서 드래그" title="드래그해서 계정 순서 변경">⇅</button>
       <input class="list-check" type="checkbox" ${account.checked !== false ? "checked" : ""} aria-label="자동 발행 계정 선택" />
       <div class="account-main">
-        <strong title="${escapeHtml(account.label || account.naverId || "Naver 계정")}">${escapeHtml(account.label || account.naverId || "Naver 계정")}</strong>
-        <span title="${escapeHtml(account.naverId || "-")}">${escapeHtml(account.naverId || "-")}</span>
+        <strong title="${escapeHtml(accountDisplayName(account))}">${escapeHtml(accountDisplayName(account))}</strong>
+        <span>로그인 정보 직접 입력</span>
         <small>블로그 ${escapeHtml(account.blogId || account.naverId || "-")}</small>
         <small>카테고리 ${(account.categories || []).length}개</small>
       </div>
@@ -805,7 +809,7 @@ function renderAccounts() {
     });
     row.querySelector("[data-action='delete']").addEventListener("click", async (event) => {
       event.stopPropagation();
-      const label = account.label || account.naverId || "Naver 계정";
+      const label = accountDisplayName(account);
       if (!window.confirm(`${label} 계정을 삭제할까요? 이 계정에 등록된 카테고리도 함께 삭제됩니다.`)) {
         return;
       }
@@ -953,9 +957,7 @@ function selectAccount(accountId) {
 
 function fillAccountForm(account) {
   $("#accountLabel").value = account?.label || "";
-  $("#naverId").value = account?.naverId || "";
-  $("#blogId").value = account?.blogId || "";
-  $("#naverPassword").value = account?.naverPassword || "";
+  $("#blogId").value = account?.blogId || account?.naverId || "";
   renderAccountSampleImage(account);
 }
 
@@ -1057,7 +1059,7 @@ function setPendingAutoTarget(target) {
     key: autoTargetKey(target),
     accountId: String(target?.account?.id || ""),
     categoryId: String(target?.category?.id || target?.category?.name || ""),
-    accountLabel: String(target?.account?.label || target?.account?.naverId || ""),
+    accountLabel: accountDisplayName(target?.account),
     categoryName: String(target?.category?.name || "")
   };
 }
@@ -1163,9 +1165,7 @@ function collectForm(target = {}) {
   const searchProviders = categorySearchProviders(category);
   return {
     accountId: account?.id || "",
-    naverId: useSelectedAccount ? (account?.naverId || "") : $("#naverId").value.trim(),
-    blogId: useSelectedAccount ? (account?.blogId || account?.naverId || "") : ($("#blogId").value.trim() || $("#naverId").value.trim()),
-    naverPassword: useSelectedAccount ? (account?.naverPassword || "") : $("#naverPassword").value,
+    blogId: useSelectedAccount ? (account?.blogId || account?.naverId || "") : $("#blogId").value.trim(),
     topicMode: $("#topicMode").value,
     repeatTermMinutes: Number($("#repeatTermMinutes").value || 60),
     topic: $("#topic").value.trim(),
@@ -1235,9 +1235,7 @@ async function saveSettingsNow() {
   $("#settingsState").textContent = "설정 저장 중";
   const form = collectForm();
   await window.blogAuto.saveSettings({
-    naverId: form.naverId,
     blogId: form.blogId,
-    naverPassword: form.naverPassword,
     topic: form.topic,
     keyword: form.keyword,
     category: form.category,
@@ -1446,7 +1444,7 @@ async function startAutoPublishing(startTargetKey = "") {
       setPendingAutoTarget(target);
       addLog({
         level: "warn",
-        message: `${target.account.label || target.account.naverId} 계정은 세션만료 상태입니다. ${target.category.name} 작업은 세션확인 또는 반복주기까지 대기합니다.`,
+        message: `${accountDisplayName(target.account)} 계정은 세션만료 상태입니다. ${target.category.name} 작업은 세션확인 또는 반복주기까지 대기합니다.`,
         at: new Date().toISOString()
       });
       state.autoPausedForSession = true;
@@ -1458,7 +1456,7 @@ async function startAutoPublishing(startTargetKey = "") {
         clearPendingAutoTarget(autoTargetKey(target));
         addLog({
           level: "info",
-          message: `${target.account.label || target.account.naverId} 계정 세션확인이 완료되어 ${target.category.name} 작업을 즉시 재시도합니다.`,
+          message: `${accountDisplayName(target.account)} 계정 세션확인이 완료되어 ${target.category.name} 작업을 즉시 재시도합니다.`,
           at: new Date().toISOString()
         });
         continue;
@@ -1477,7 +1475,7 @@ async function startAutoPublishing(startTargetKey = "") {
     for (let attempt = 1; attempt <= autoAttemptLimit && state.autoRunning; attempt += 1) {
       addLog({
         level: "info",
-        message: `자동 Cycle 시작 (${attempt}/${autoAttemptLimit}): ${target.account.label || target.account.naverId} / ${target.category.name}`,
+        message: `자동 Cycle 시작 (${attempt}/${autoAttemptLimit}): ${accountDisplayName(target.account)} / ${target.category.name}`,
         at: new Date().toISOString()
       });
       $("#selectedTitle").textContent = "아직 선정 전";
@@ -1524,7 +1522,7 @@ async function startAutoPublishing(startTargetKey = "") {
         renderAccounts();
         addLog({
           level: "warn",
-          message: `${target.account.label || target.account.naverId} 계정은 세션만료 상태입니다. ${target.category.name} 작업은 세션확인 또는 반복주기까지 대기합니다.`,
+          message: `${accountDisplayName(target.account)} 계정은 세션만료 상태입니다. ${target.category.name} 작업은 세션확인 또는 반복주기까지 대기합니다.`,
           at: new Date().toISOString()
         });
         state.autoPausedForSession = true;
@@ -1536,7 +1534,7 @@ async function startAutoPublishing(startTargetKey = "") {
           clearPendingAutoTarget(autoTargetKey(target));
           addLog({
             level: "info",
-            message: `${target.account.label || target.account.naverId} 계정 세션확인이 완료되어 ${target.category.name} 작업을 즉시 재시도합니다.`,
+            message: `${accountDisplayName(target.account)} 계정 세션확인이 완료되어 ${target.category.name} 작업을 즉시 재시도합니다.`,
             at: new Date().toISOString()
           });
           continue autoLoop;
@@ -1593,7 +1591,7 @@ async function startManualJob() {
   if (!form.topic) throw new Error("수동 방식에서는 주제가 필요합니다.");
   if (!form.category) throw new Error("선택 계정에서 카테고리를 체크하세요.");
   if (!form.keyword) throw new Error("선택한 카테고리에 검색 키워드를 등록하세요.");
-  if (form.publishAfterGenerate && !form.naverId) throw new Error("발행까지 진행하려면 작업할 계정을 선택하거나 등록하세요.");
+  if (form.publishAfterGenerate && !form.blogId) throw new Error("발행까지 진행하려면 Blog ID가 등록된 계정을 선택하세요.");
   state.running = true;
   $("#startButton").disabled = true;
   setTistoryTestButtonDisabled(true);
@@ -1749,22 +1747,20 @@ async function boot() {
   });
 
   $("#addAccountButton").addEventListener("click", async () => {
-    const naverId = $("#naverId").value.trim();
-    if (!naverId) {
-      addLog({ level: "error", message: "Naver ID를 입력하세요.", at: new Date().toISOString() });
+    const blogId = $("#blogId").value.trim();
+    if (!blogId) {
+      addLog({ level: "error", message: "Blog ID를 입력하세요.", at: new Date().toISOString() });
       return;
     }
-    const duplicate = state.accountStore.accounts.find((account) => account.naverId === naverId);
+    const duplicate = state.accountStore.accounts.find((account) => String(account.blogId || account.naverId || "").trim() === blogId);
     if (duplicate) {
-      addLog({ level: "error", message: "이미 등록된 Naver ID입니다. 기존 계정을 선택한 뒤 수정하세요.", at: new Date().toISOString() });
+      addLog({ level: "error", message: "이미 등록된 Blog ID입니다. 기존 계정을 선택한 뒤 수정하세요.", at: new Date().toISOString() });
       return;
     }
     const account = {
       id: makeId("acct"),
-      label: $("#accountLabel").value.trim() || naverId,
-      naverId,
-      blogId: $("#blogId").value.trim(),
-      naverPassword: $("#naverPassword").value,
+      label: $("#accountLabel").value.trim() || blogId,
+      blogId,
       sampleImagePath: "",
       sampleImageHash: "",
       sampleImageUpdatedAt: "",
@@ -1792,20 +1788,18 @@ async function boot() {
       addLog({ level: "error", message: "수정할 계정을 먼저 선택하세요.", at: new Date().toISOString() });
       return;
     }
-    const naverId = $("#naverId").value.trim();
-    if (!naverId) {
-      addLog({ level: "error", message: "Naver ID를 입력하세요.", at: new Date().toISOString() });
+    const blogId = $("#blogId").value.trim();
+    if (!blogId) {
+      addLog({ level: "error", message: "Blog ID를 입력하세요.", at: new Date().toISOString() });
       return;
     }
-    const duplicate = state.accountStore.accounts.find((item) => item.id !== account.id && item.naverId === naverId);
+    const duplicate = state.accountStore.accounts.find((item) => item.id !== account.id && String(item.blogId || item.naverId || "").trim() === blogId);
     if (duplicate) {
-      addLog({ level: "error", message: "다른 계정에 이미 등록된 Naver ID입니다.", at: new Date().toISOString() });
+      addLog({ level: "error", message: "다른 계정에 이미 등록된 Blog ID입니다.", at: new Date().toISOString() });
       return;
     }
-    account.label = $("#accountLabel").value.trim() || naverId;
-    account.naverId = naverId;
-    account.blogId = $("#blogId").value.trim();
-    account.naverPassword = $("#naverPassword").value;
+    account.label = $("#accountLabel").value.trim() || blogId;
+    account.blogId = blogId;
     await saveAccountStoreNow();
   });
 
@@ -2009,9 +2003,7 @@ async function boot() {
   $("#jobForm").querySelectorAll("input, select, textarea").forEach((control) => {
     if ([
       "accountLabel",
-      "naverId",
       "blogId",
-      "naverPassword",
       "categoryName",
       "categoryKeyword",
       "categoryExcludedTopics",

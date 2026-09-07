@@ -1,5 +1,6 @@
 const { spawnSync } = require("node:child_process");
 const fs = require("node:fs");
+const os = require("node:os");
 const path = require("node:path");
 
 const root = path.resolve(__dirname, "..");
@@ -33,8 +34,45 @@ for (const file of targets) {
   }
 }
 
-const { normalizeMaxBodyImages } = require(path.join(root, "src", "lib", "settings"));
+const { normalizeMaxBodyImages, readSettings } = require(path.join(root, "src", "lib", "settings"));
+const { readAccountStore } = require(path.join(root, "src", "lib", "accountStore"));
 const { _private: imageContractPrivate } = require(path.join(root, "src", "lib", "codexRunner"));
+
+const manualLoginMigrationRoot = fs.mkdtempSync(path.join(os.tmpdir(), "blogauto-manual-login-"));
+try {
+  fs.writeFileSync(path.join(manualLoginMigrationRoot, "user-settings.json"), JSON.stringify({
+    naverId: "legacy-login-id",
+    naverPassword: "must-be-removed"
+  }), "utf8");
+  fs.writeFileSync(path.join(manualLoginMigrationRoot, "account-categories.json"), JSON.stringify({
+    selectedAccountId: "acct_legacy",
+    accounts: [{
+      id: "acct_legacy",
+      label: "Legacy",
+      naverId: "legacy-login-id",
+      naverPassword: "must-be-removed",
+      categories: []
+    }]
+  }), "utf8");
+  const migratedSettings = readSettings(manualLoginMigrationRoot);
+  const migratedStore = readAccountStore(manualLoginMigrationRoot, migratedSettings);
+  const persistedSettings = fs.readFileSync(path.join(manualLoginMigrationRoot, "user-settings.json"), "utf8");
+  const persistedAccounts = fs.readFileSync(path.join(manualLoginMigrationRoot, "account-categories.json"), "utf8");
+  if (
+    migratedSettings.blogId !== "legacy-login-id"
+    || Object.prototype.hasOwnProperty.call(migratedSettings, "naverId")
+    || Object.prototype.hasOwnProperty.call(migratedSettings, "naverPassword")
+    || migratedStore.accounts[0]?.blogId !== "legacy-login-id"
+    || Object.prototype.hasOwnProperty.call(migratedStore.accounts[0] || {}, "naverPassword")
+    || persistedSettings.includes("must-be-removed")
+    || persistedAccounts.includes("must-be-removed")
+  ) {
+    failed = true;
+    console.error("manual Naver login migration must preserve Blog ID while removing stored credentials");
+  }
+} finally {
+  fs.rmSync(manualLoginMigrationRoot, { recursive: true, force: true });
+}
 if (normalizeMaxBodyImages(0) !== 0 || normalizeMaxBodyImages(1) !== 10 || normalizeMaxBodyImages(2) !== 10 || normalizeMaxBodyImages(10) !== 10) {
   failed = true;
   console.error("src/lib/settings.js: enabled body images must normalize to section-by-section generation with a 10 image safety cap");
@@ -1812,29 +1850,29 @@ if (clickFirstVisible && clickFirstVisible.content.includes(".first().waitFor"))
 }
 const completeLogin = extractFunctionBlock(sourceFiles.naverPublisher, "async function completeLoginIfNeeded", "completeLoginIfNeeded function");
 if (
-  !sourceFiles.naverPublisher.content.includes("function defaultNaverLoginSubmitSelectors")
-  || !sourceFiles.naverPublisher.content.includes("#loginBtn_row")
-  || !sourceFiles.naverPublisher.content.includes("span[data-i18n='btnLogin']")
-  || !sourceFiles.naverPublisher.content.includes("loginSubmit: defaultNaverLoginSubmitSelectors()")
+  sourceFiles.naverPublisher.content.includes("function defaultNaverLoginSubmitSelectors")
+  || sourceFiles.naverPublisher.content.includes("loginSubmit:")
+  || sourceFiles.naverPublisher.content.includes("humanFill(page, selectors.idInput")
+  || sourceFiles.naverPublisher.content.includes("humanFill(page, selectors.passwordInput")
 ) {
   failed = true;
-  console.error("src/lib/naverPublisher.js: Naver login submit selector must support the current #loginBtn_row button across session and publish flows");
+  console.error("src/lib/naverPublisher.js: Naver login credentials and submit button must never be filled or clicked automatically");
 }
-if (completeLogin && !completeLogin.content.includes("existingMatchesExpectedId")) {
+if (completeLogin && !completeLogin.content.includes("아이디와 비밀번호를 직접 입력해 주세요")) {
   failed = true;
-  console.error("src/lib/naverPublisher.js: prefilled Naver login ID must be compared with the target account ID");
+  console.error("src/lib/naverPublisher.js: manual Naver login guidance is missing");
 }
-if (completeLogin && !completeLogin.content.includes("hasPrefilledCredentials = Boolean(existingId && existingPassword && existingMatchesExpectedId)")) {
+if (completeLogin && !completeLogin.content.includes("await waitForLoginComplete")) {
   failed = true;
-  console.error("src/lib/naverPublisher.js: auto-clicking login must require prefilled ID/PW to match the target account");
+  console.error("src/lib/naverPublisher.js: manual login flow must keep the browser open until login completes");
 }
-if (completeLogin && !completeLogin.content.includes("!existingId || hasDifferentPrefilledId")) {
+if (sourceFiles.rendererIndex.content.includes('id="naverId"') || sourceFiles.rendererIndex.content.includes('id="naverPassword"')) {
   failed = true;
-  console.error("src/lib/naverPublisher.js: mismatched prefilled login ID must be overwritten with the target account ID");
+  console.error("src/renderer/index.html: Naver credential input fields must be removed");
 }
-if (completeLogin && !completeLogin.content.includes("!existingPassword || hasDifferentPrefilledId")) {
+if (!sourceFiles.rendererIndex.content.includes("네이버 아이디와 비번은 직접 입력을 하셔야 합니다.")) {
   failed = true;
-  console.error("src/lib/naverPublisher.js: mismatched prefilled login ID must force re-entry of the target account password");
+  console.error("src/renderer/index.html: manual Naver credential guidance is missing");
 }
 const titleSelectors = extractFunctionBlock(sourceFiles.naverPublisher, "function titleSelectors", "titleSelectors function");
 if (titleSelectors && titleSelectors.content.includes("\"[contenteditable='true']\"")) {
@@ -2028,9 +2066,9 @@ if (!sourceFiles.main.content.includes("blogId: account.blogId || account.naverI
   failed = true;
   console.error("src/main.js: account session check must use blogId for postwrite URL when present");
 }
-if (!sourceFiles.main.content.includes("blogId = String(form.blogId || account.blogId || naverId).trim()")) {
+if (!sourceFiles.main.content.includes('blogId = String(form.blogId || account.blogId || account.naverId || "").trim()')) {
   failed = true;
-  console.error("src/main.js: job blogId must fall back to naverId when blogId is empty");
+  console.error("src/main.js: job blogId must preserve legacy account fallback without using login credentials");
 }
 const insertQuoteBlock = extractFunctionBlock(sourceFiles.naverPublisher, "async function insertQuoteBlock", "insertQuoteBlock function");
 if (insertQuoteBlock && /\bthrow\b/.test(insertQuoteBlock.content)) {
@@ -2144,6 +2182,17 @@ if (ensureAiMark) {
     console.error("src/lib/naverPublisher.js: every successful AI image mark path must restore editor focus");
   }
 }
+
+const captchaSessionCheck = spawnSync(process.execPath, [path.join(root, "scripts", "check-naver-captcha.js")], {
+  cwd: root,
+  encoding: "utf8"
+});
+if (captchaSessionCheck.status !== 0) {
+  failed = true;
+  process.stderr.write(captchaSessionCheck.stderr || captchaSessionCheck.stdout);
+} else {
+  process.stdout.write(captchaSessionCheck.stdout);
+}
 const prepareBodyAfterTitleImage = extractFunctionBlock(
   sourceFiles.naverPublisher,
   "async function prepareBodyAfterTitleImage",
@@ -2162,7 +2211,7 @@ if (publishToNaver && !publishToNaver.content.includes("발행 단계에서 블�
   failed = true;
   console.error("src/lib/naverPublisher.js: prepared publish sessions must navigate to postwrite before waiting for editor");
 }
-if (publishToNaver && !publishToNaver.content.includes("await completeLoginIfNeeded(page, selectors, options, log);")) {
+if (publishToNaver && !publishToNaver.content.includes("await completeLoginIfNeeded(page, selectors, sessionRecoveryOptions, log);")) {
   failed = true;
   console.error("src/lib/naverPublisher.js: prepared publish sessions must re-check login state after navigating to postwrite");
 }

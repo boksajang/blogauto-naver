@@ -781,10 +781,8 @@ function resolveAccount(form, accountStore) {
   if (account) return account;
   return {
     id: accountId,
-    label: String(form.naverId || "").trim() || "Naver 계정",
-    naverId: String(form.naverId || "").trim(),
+    label: String(form.blogId || "").trim() || "Naver 계정",
     blogId: String(form.blogId || "").trim(),
-    naverPassword: String(form.naverPassword || ""),
     sessionStatus: "unknown",
     categories: []
   };
@@ -811,11 +809,9 @@ async function verifyPublishSessionBeforeGeneration({ runtimeRoot, account, blog
   let result;
   try {
     result = await checkNaverSession({
-      naverId: account.naverId || form.naverId || blogId,
       blogId,
-      naverPassword: account.naverPassword || form.naverPassword || "",
       browserProfileDir,
-      interactiveLogin: false,
+      interactiveLogin: true,
       keepOpen: true,
       requireEditor: true,
       domNotes: form.naverEditorDomNotes || "",
@@ -1022,9 +1018,7 @@ async function startJob(form) {
   const account = resolveAccount(form, accountStore);
   const category = String(form.category || "").trim();
   const categoryKeyword = String(form.keyword || "").trim();
-  const naverId = String(form.naverId || account.naverId || "").trim();
-  const blogId = String(form.blogId || account.blogId || naverId).trim();
-  const naverPassword = String(form.naverPassword || account.naverPassword || "");
+  const blogId = String(form.blogId || account.blogId || account.naverId || "").trim();
   const codexCmdPath = resolveCodexCmdPath(form.codexCmdPath || settings.codexCmdPath);
   const codexModel = normalizeCodexModel(form.codexModel || settings.codexModel);
   const publishVisibility = String(form.publishVisibility || (form.publishPrivate === false ? "public" : "private"));
@@ -1049,16 +1043,16 @@ async function startJob(form) {
     activeJob = null;
     throw new Error("카테고리별 검색 키워드는 필수입니다.");
   }
-  if (shouldPublish && !naverId) {
+  if (shouldPublish && !blogId) {
     activeJob = null;
-    throw new Error("발행까지 진행하려면 Naver ID가 필요합니다.");
+    throw new Error("발행까지 진행하려면 Blog ID가 필요합니다.");
   }
   if (publishToTistoryAfterNaver && !tistoryBlogId) {
     activeJob = null;
     throw new Error("티스토리 발행에는 블로그 ID가 필요합니다.");
   }
   if (shouldPublish) {
-    safeLog(jobId, `Naver 로그인 ID: ${naverId} / 블로그 주소 ID: ${blogId}`);
+    safeLog(jobId, `Naver 블로그 주소 ID: ${blogId} (로그인은 열린 Chrome에서 직접 입력)`);
   }
 
   let preparedNaverSession = null;
@@ -1157,9 +1151,7 @@ async function startJob(form) {
     rateLimits: null
   };
   writeSettings(runtimeRoot, {
-    naverId,
     blogId,
-    naverPassword,
     topic,
     keyword,
     category,
@@ -1217,9 +1209,7 @@ async function startJob(form) {
       updateStatus(jobId, "publishing", "Naver pending draft publish resume");
       safeLog(jobId, "이전 작업의 작성 완료 draft를 재사용해 발행만 이어갑니다.", "info");
       await publishToNaver({
-        naverId,
         blogId,
-        naverPassword,
         category,
         publishPrivate: pendingDraft.publishPrivate ?? publishPrivate,
         publishVisibility: pendingDraft.publishVisibility || publishVisibility,
@@ -1722,9 +1712,7 @@ async function startJob(form) {
       updateStatus(jobId, "publishing", `Naver 블로그 ${publishVisibility === "public" ? "전체공개" : "비공개"} 발행 자동화`);
       await publishToNaver({
         accountId: account.id || "",
-        naverId,
         blogId,
-        naverPassword,
         category,
         publishPrivate,
         publishVisibility,
@@ -2085,9 +2073,7 @@ app.whenReady().then(() => {
     const existingNaverSession = reusableNaverSession(key);
     const result = existingNaverSession
       ? await verifyOpenNaverSession({
-        naverId: account.naverId,
         blogId: account.blogId || account.naverId,
-        naverPassword: account.naverPassword || "",
         browserProfileDir,
         preparedContext: existingNaverSession.context,
         preparedPage: existingNaverSession.page,
@@ -2097,9 +2083,7 @@ app.whenReady().then(() => {
         log: (message, level) => safeLog("session", message, level)
       })
       : await checkNaverSession({
-        naverId: account.naverId,
         blogId: account.blogId || account.naverId,
-        naverPassword: account.naverPassword || "",
         browserProfileDir,
         interactiveLogin: true,
         keepOpen: true,
@@ -2159,13 +2143,13 @@ app.whenReady().then(() => {
     const saved = updateAccountSession(runtimeRoot, account.id, sessionStatus, settings);
     emit("accounts:update", saved);
     if (result.status !== "valid") {
-      safeLog("session", `${account.label || account.naverId} 계정 세션이 만료 상태입니다.`, "warn");
+      safeLog("session", `${account.label || account.blogId || account.naverId} 계정 세션이 만료 상태입니다.`, "warn");
       return publicResult;
     }
     if (preparedSession) {
       activeNaverSessions.set(key, preparedSession);
     }
-    safeLog("session", `${account.label || account.naverId} 계정 글쓰기 편집기 확인 완료.`);
+    safeLog("session", `${account.label || account.blogId || account.naverId} 계정 글쓰기 편집기 확인 완료.`);
     return publicResult;
   });
   ipcMain.handle("tistory:checkSession", async (_event, tistoryBlogId) => {

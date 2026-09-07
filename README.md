@@ -1,5 +1,10 @@
 # Blogauto Naver + Tistory
 
+> [!IMPORTANT]
+> **Naver 로그인 방식이 자동 로그인에서 수동 로그인으로 변경되었습니다.**
+>
+> 계정 보호를 위해 프로그램이 Naver 아이디와 비밀번호를 자동으로 입력하거나 로그인 버튼을 누르지 않습니다. 이에 따라 계정 관리 화면의 **Naver ID 및 Password 입력 항목도 제거되었습니다.** 계정에는 블로그 주소의 `Blog ID`만 등록하고, 세션 확인 또는 발행 중 로그인·캡챠 화면이 열리면 사용자가 해당 Chrome 창에서 아이디와 비밀번호를 직접 입력해 로그인해야 합니다. 로그인 완료 후에는 전용 Chrome 프로필에 저장된 세션을 재사용합니다.
+
 Codex 기반 Windows 데스크톱 자동화 콘솔입니다. Naver Blog 글 생성/발행을 기본 흐름으로 사용하고, Naver 발행이 성공하면 같은 제목, 본문, 이미지, 카테고리, 태그를 Tistory 블로그에도 이어서 발행할 수 있습니다.
 
 ## 주요 기능
@@ -18,8 +23,8 @@ Codex 기반 Windows 데스크톱 자동화 콘솔입니다. Naver Blog 글 생�
 
 ## 기본 흐름
 
-1. 계정, 카테고리, 키워드, 발행 목적을 설정합니다.
-2. 필요하면 세션 일괄 확인으로 Naver와 Tistory 로그인 상태를 확인합니다.
+1. 계정 표시명과 Naver `Blog ID`, 카테고리, 키워드, 발행 목적을 설정합니다.
+2. 필요하면 세션 일괄 확인으로 Naver와 Tistory 로그인 상태를 확인하고, 로그인 화면이 나오면 직접 로그인합니다.
 3. Research/Title Agent가 주제와 제목 후보를 고르고 검색 근거를 수집합니다.
 4. Writer Agent가 본문과 태그, 이미지 프롬프트를 작성합니다.
 5. Main Review Agent가 제목 일치, 근거 신뢰도, 본문 품질, 독자 가치, 현재성 기준을 검토합니다.
@@ -70,7 +75,7 @@ npm run publish:latest
 
 ## 로컬 데이터와 계정정보
 
-계정, 비밀번호, 세션, 브라우저 프로필, 작업 로그, 생성 이미지, 빌드 결과는 Git에 올리지 않습니다. 대표 제외 대상은 다음과 같습니다.
+계정 설정, 세션, 브라우저 프로필, 작업 로그, 생성 이미지, 빌드 결과는 Git에 올리지 않습니다. Naver 비밀번호는 앱에 입력하거나 저장하지 않습니다. 대표 제외 대상은 다음과 같습니다.
 
 - `runtime/`
 - `dist/`
@@ -88,7 +93,7 @@ npm run publish:latest
 - `src/main.js`: Electron main process, 작업 흐름, 세션 확인, Naver/Tistory 발행 오케스트레이션
 - `src/lib/codexRunner.js`: Research/Title, Writer, Main Review, Image Worker 실행과 프롬프트 구성
 - `src/lib/search.js`: 검색 후보 수집, 공식/기관/독립 신뢰 근거 판정, source quality 요약
-- `src/lib/naverPublisher.js`: Naver 로그인, 글쓰기 편집기, 이미지/카테고리/태그/발행 자동화
+- `src/lib/naverPublisher.js`: Naver 수동 로그인 대기, 글쓰기 편집기, 이미지/카테고리/태그/발행 자동화
 - `src/lib/tistoryPublisher.js`: Tistory Kakao 세션, TinyMCE 본문 입력, 이미지/카테고리/태그/발행 자동화
 - `src/lib/accountStore.js`: 계정과 카테고리 저장 구조
 - `src/lib/settings.js`: 앱 설정 기본값과 정규화

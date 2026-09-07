@@ -18,9 +18,7 @@ const CODEX_MODEL_IDS = new Set([
 ]);
 
 const DEFAULT_SETTINGS = {
-  naverId: "",
   blogId: "",
-  naverPassword: "",
   topic: "",
   keyword: "",
   category: "",
@@ -72,6 +70,12 @@ function ensureSettingsFile(runtimeRoot) {
 
 function normalizeSettings(settings) {
   const normalized = { ...settings };
+  if (!String(normalized.blogId || "").trim() && String(normalized.naverId || "").trim()) {
+    normalized.blogId = String(normalized.naverId).trim();
+  }
+  delete normalized.naverId;
+  delete normalized.naverPassword;
+  delete normalized.password;
   if (!normalized.naverSearchUrl || normalized.naverSearchUrl === LEGACY_NAVER_SEARCH_URL) {
     normalized.naverSearchUrl = DEFAULT_NAVER_SEARCH_URL;
   }
@@ -158,7 +162,19 @@ function readSettings(runtimeRoot) {
     if (!Object.prototype.hasOwnProperty.call(parsed, "bodyImageAspectRatio")) {
       merged.bodyImageAspectRatio = parsed.imageAspectRatio;
     }
-    return normalizeSettings(merged);
+    const normalized = normalizeSettings(merged);
+    if (
+      Object.prototype.hasOwnProperty.call(parsed, "naverId")
+      || Object.prototype.hasOwnProperty.call(parsed, "naverPassword")
+      || Object.prototype.hasOwnProperty.call(parsed, "password")
+    ) {
+      try {
+        fs.writeFileSync(getSettingsPath(runtimeRoot), `${JSON.stringify(normalized, null, 2)}\n`, "utf8");
+      } catch {
+        // A read-only legacy file must not prevent the already sanitized settings from loading.
+      }
+    }
+    return normalized;
   } catch {
     return { ...DEFAULT_SETTINGS };
   }

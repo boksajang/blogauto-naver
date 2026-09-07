@@ -81,9 +81,7 @@ async function main() {
   const settings = readSettings(runtimeRoot);
   const { account, category, keyword } = pickAccountAndCategory(runtimeRoot, settings);
   const topic = String(settings.topic || "").trim();
-  const naverId = String(account?.naverId || settings.naverId || "").trim();
-  const blogId = String(account?.blogId || settings.blogId || naverId).trim();
-  const naverPassword = String(account?.naverPassword || settings.naverPassword || "");
+  const blogId = String(account?.blogId || settings.blogId || account?.naverId || "").trim();
   const jobDir = latestJobDir(runtimeRoot);
   const rawResult = JSON.parse(fs.readFileSync(path.join(jobDir, "agent-result.json"), "utf8"));
   const sourceFailureReason = detectCodexSourceFailure(rawResult);
@@ -101,8 +99,8 @@ async function main() {
     result: rawResult
   });
 
-  if (!naverId) {
-    throw new Error("발행 테스트에는 저장된 Naver ID가 필요합니다.");
+  if (!blogId) {
+    throw new Error("발행 테스트에는 저장된 Blog ID가 필요합니다.");
   }
   if (!category) {
     throw new Error("발행 테스트에는 저장된 category가 필요합니다.");
@@ -111,9 +109,7 @@ async function main() {
   log(`최신 작업 재사용: ${path.basename(jobDir)}`);
   log(`제목: ${agentResult.title}`);
   await publishToNaver({
-    naverId,
     blogId,
-    naverPassword,
     category,
     publishPrivate: settings.publishPrivate !== false,
     publishVisibility: settings.publishVisibility || (settings.publishPrivate === false ? "public" : "private"),

@@ -5,11 +5,14 @@ const path = require("node:path");
 
 (async () => {
   const smokeRuntimeRoot = path.resolve(__dirname, "..", "runtime", ".smoke-electron-runtime");
+  const screenshotDir = path.resolve(__dirname, "..", "runtime", ".smoke-electron-screenshots");
   const userDataDir = path.join(smokeRuntimeRoot, "browser-profile");
   const smokeAssetDir = path.join(smokeRuntimeRoot, "account-assets", "acct_smoke_delete");
   const smokeSampleImagePath = path.join(smokeAssetDir, "sample.png");
   fs.rmSync(smokeRuntimeRoot, { recursive: true, force: true });
+  fs.rmSync(screenshotDir, { recursive: true, force: true });
   fs.mkdirSync(smokeRuntimeRoot, { recursive: true });
+  fs.mkdirSync(screenshotDir, { recursive: true });
   fs.mkdirSync(userDataDir, { recursive: true });
   console.log("Launching Electron...");
   const app = await electron.launch({
@@ -33,9 +36,8 @@ const path = require("node:path");
 
     const checks = [
       ["title", "Naver Blog Automator"],
-      ["naver id", "#naverId"],
       ["blog id", "#blogId"],
-      ["password", "#naverPassword"],
+      ["manual login guidance", ".account-login-guidance"],
       ["startup notice", "#startupNotice"],
       ["dismiss startup notice", "#dismissStartupNoticeButton"],
       ["add account", "#addAccountButton"],
@@ -81,9 +83,12 @@ const path = require("node:path");
       }
     }
 
-    const passwordType = await window.locator("#naverPassword").getAttribute("type");
-    if (passwordType !== "password") {
-      throw new Error("Password field is not masked.");
+    if (await window.locator("#naverId, #naverPassword").count()) {
+      throw new Error("Naver credential fields must not be present.");
+    }
+    const loginGuidance = await window.locator(".account-login-guidance").textContent();
+    if (!String(loginGuidance || "").includes("직접 입력")) {
+      throw new Error("Manual Naver login guidance is missing.");
     }
     if (await window.locator("#startupNotice").isVisible().catch(() => false)) {
       await window.evaluate(() => {
@@ -129,8 +134,19 @@ const path = require("node:path");
       { width: 1180, height: 900 },
       { width: 980, height: 900 }
     ]) {
-      await window.setViewportSize({ width, height });
-      await window.waitForTimeout(100);
+      const nativeSize = await app.evaluate(({ BrowserWindow }, size) => {
+        const targetWindow = BrowserWindow.getAllWindows()[0];
+        targetWindow.setContentSize(size.width, size.height);
+        return targetWindow.getContentSize();
+      }, { width, height });
+      await window.waitForTimeout(250);
+      const viewportSize = await window.evaluate(() => ({
+        width: document.documentElement.clientWidth,
+        height: document.documentElement.clientHeight
+      }));
+      if (Math.abs(nativeSize[0] - viewportSize.width) > 1 || Math.abs(nativeSize[1] - viewportSize.height) > 1) {
+        throw new Error(`Native window/content viewport mismatch at ${width}x${height}: native=${nativeSize.join("x")}, viewport=${viewportSize.width}x${viewportSize.height}`);
+      }
       const layoutResult = await window.evaluate(({ selectors, requireVerticalFit }) => {
         const viewportWidth = document.documentElement.clientWidth;
         const viewportHeight = document.documentElement.clientHeight;
@@ -158,7 +174,14 @@ const path = require("node:path");
       if (badPanel) {
         throw new Error(`Panel overflows at ${width}x${height}: ${JSON.stringify(badPanel)}`);
       }
+      await window.screenshot({ path: path.join(screenshotDir, `layout-${width}x${height}.png`) });
     }
+
+    await app.evaluate(({ BrowserWindow }) => {
+      BrowserWindow.getAllWindows()[0].setContentSize(1440, 900);
+    });
+    await window.waitForTimeout(250);
+    console.log("Responsive layout screenshots captured.");
 
     fs.mkdirSync(smokeAssetDir, { recursive: true });
     fs.writeFileSync(smokeSampleImagePath, Buffer.from(
@@ -171,9 +194,7 @@ const path = require("node:path");
         accounts: [{
           id: "acct_smoke_delete",
           label: "Smoke Delete Account",
-          naverId: "smoke-delete",
           blogId: "smoke-blog",
-          naverPassword: "",
           checked: true,
           sessionStatus: "unknown",
           sessionCheckedAt: "",
@@ -213,6 +234,8 @@ const path = require("node:path");
     if (!samplePreviewImages) {
       throw new Error("Account sample image preview did not render.");
     }
+    await window.screenshot({ path: path.join(screenshotDir, "manual-login-account-ui.png") });
+    console.log("Manual-login account UI captured.");
     await window.locator(".category-row").filter({ hasText: "Smoke Category" }).locator("[data-action='edit']").click();
     const categoryEditSnapshot = await window.evaluate(() => ({
       name: document.querySelector("#categoryName")?.value || "",
@@ -256,7 +279,7 @@ const path = require("node:path");
         startJob: async () => {
           calls += 1;
           return calls < 3
-            ? { status: "failed", reason: "research blocked in smoke test" }
+            ? { status: "duplicate_retry", reason: "duplicate title in smoke test" }
             : { status: "codex_usage_limit" };
         }
       };
@@ -277,6 +300,7 @@ const path = require("node:path");
     if (autoRetryCalls !== 3) {
       throw new Error(`Auto publishing did not retry failed target 3 times, got ${autoRetryCalls}.`);
     }
+    console.log("Duplicate retry flow passed.");
     const researchRetryCalls = await window.evaluate(async () => {
       const originalHooks = window.__blogAutoTestHooks;
       const originalDelayMinutes = document.querySelector("#repeatTermMinutes")?.value || "60";
@@ -286,7 +310,7 @@ const path = require("node:path");
         startJob: async () => {
           calls += 1;
           if (calls >= 2) {
-            window.setTimeout(() => document.querySelector("#stopAutoButton")?.click(), 0);
+            document.querySelector("#stopAutoButton")?.click();
           }
           return {
             status: "failed",
@@ -312,18 +336,21 @@ const path = require("node:path");
     if (researchRetryCalls !== 2) {
       throw new Error(`Research-stage auto retry should stop after 2 attempts, got ${researchRetryCalls}.`);
     }
+    console.log("Research retry flow passed.");
     await window.locator("#accountLabel").fill("Smoke Edited Account");
     await window.locator("#updateAccountButton").click();
     await window.waitForFunction(() => (
       [...document.querySelectorAll(".account-row")]
         .some((row) => row.textContent.includes("Smoke Edited Account"))
     ));
+    console.log("Account update flow passed.");
     window.on("dialog", (dialog) => dialog.accept());
     await window.locator(".account-row").filter({ hasText: "Smoke Edited Account" }).locator("[data-action='delete']").click();
     await window.waitForFunction(() => (
       [...document.querySelectorAll(".account-row")]
         .every((row) => !row.textContent.includes("Smoke Edited Account"))
     ));
+    console.log("Account delete flow passed.");
 
     console.log("Electron smoke test passed.");
 

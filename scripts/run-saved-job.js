@@ -100,9 +100,7 @@ async function main() {
   const { account, category, keyword } = pickAccountAndCategory(runtimeRoot, settings);
 
   let topic = String(settings.topic || "").trim();
-  const naverId = String(account?.naverId || settings.naverId || "").trim();
-  const blogId = String(account?.blogId || settings.blogId || naverId).trim();
-  const naverPassword = String(account?.naverPassword || settings.naverPassword || "");
+  const blogId = String(account?.blogId || settings.blogId || account?.naverId || "").trim();
   const codexCmdPath = "codex.cmd";
   const shouldPublish = settings.publishAfterGenerate === true;
   const publishVisibility = String(settings.publishVisibility || (settings.publishPrivate === false ? "public" : "private"));
@@ -118,8 +116,8 @@ async function main() {
   if (!topic && String(settings.topicMode || "manual") !== "auto") {
     throw new Error("user-settings.json에 topic 값이 없습니다.");
   }
-  if (shouldPublish && !naverId) {
-    throw new Error("발행까지 진행하려면 user-settings.json 또는 account-categories.json의 Naver ID가 필요합니다.");
+  if (shouldPublish && !blogId) {
+    throw new Error("발행까지 진행하려면 user-settings.json 또는 account-categories.json의 Blog ID가 필요합니다.");
   }
 
   log(`작업 시작: ${jobId}`);
@@ -254,9 +252,7 @@ async function main() {
   if (shouldPublish) {
     log("Naver 비공개 발행 시작");
     await publishToNaver({
-      naverId,
       blogId,
-      naverPassword,
       category,
       publishPrivate,
       publishVisibility,
