@@ -1,3 +1,5 @@
+이 저장소는 기존 버전입니다. Chrome 확장프로그램 기반 새 버전은 [naverblog-extention](https://github.com/boksajang/naverblog-extention)에서 확인해 주세요.
+
 # Blogauto Naver + Tistory
 
 > [!IMPORTANT]
