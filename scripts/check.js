@@ -34,9 +34,18 @@ for (const file of targets) {
   }
 }
 
-const { normalizeMaxBodyImages, readSettings } = require(path.join(root, "src", "lib", "settings"));
+const { normalizeMaxBodyImages, readSettings, resolveCodexCmdPath } = require(path.join(root, "src", "lib", "settings"));
 const { readAccountStore } = require(path.join(root, "src", "lib", "accountStore"));
 const { _private: imageContractPrivate } = require(path.join(root, "src", "lib", "codexRunner"));
+
+if (process.platform === "darwin" && resolveCodexCmdPath("codex.cmd") === "codex.cmd") {
+  failed = true;
+  console.error("src/lib/settings.js: macOS default Codex path must not resolve to Windows codex.cmd");
+}
+if (process.platform === "darwin" && resolveCodexCmdPath("codex") === "codex.cmd") {
+  failed = true;
+  console.error("src/lib/settings.js: macOS Codex path must resolve to a native executable");
+}
 
 const manualLoginMigrationRoot = fs.mkdtempSync(path.join(os.tmpdir(), "blogauto-manual-login-"));
 try {
@@ -1965,6 +1974,14 @@ if (!sourceFiles.rendererApp.content.includes("STARTUP_NOTICE_KEY")) {
 if (!sourceFiles.main.content.includes("function detectChromeInstall")) {
   failed = true;
   console.error("src/main.js: app startup must detect whether local Chrome is installed");
+}
+if (process.platform === "darwin" && !sourceFiles.main.content.includes("/Applications/Google Chrome.app/Contents/MacOS/Google Chrome")) {
+  failed = true;
+  console.error("src/main.js: macOS Chrome detection must check the standard Applications path");
+}
+if (process.platform === "darwin" && !sourceFiles.main.content.includes("app.getPath(\"userData\")")) {
+  failed = true;
+  console.error("src/main.js: macOS packaged runtime must live under userData, not inside the app bundle");
 }
 if (!sourceFiles.main.content.includes("chrome: detectChromeInstall()")) {
   failed = true;

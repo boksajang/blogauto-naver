@@ -101,7 +101,7 @@ async function main() {
 
   let topic = String(settings.topic || "").trim();
   const blogId = String(account?.blogId || settings.blogId || account?.naverId || "").trim();
-  const codexCmdPath = "codex.cmd";
+  const codexCmdPath = process.platform === "win32" ? "codex.cmd" : "codex";
   const shouldPublish = settings.publishAfterGenerate === true;
   const publishVisibility = String(settings.publishVisibility || (settings.publishPrivate === false ? "public" : "private"));
   const publishPrivate = publishVisibility !== "public";

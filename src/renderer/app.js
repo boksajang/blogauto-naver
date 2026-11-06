@@ -1177,7 +1177,7 @@ function collectForm(target = {}) {
     freshnessLevel: category?.freshnessLevel || "auto",
     searchChannel: normalizeSearchChannel(category?.searchChannel),
     trustBlogAsSource: category?.trustBlogAsSource === true,
-    codexCmdPath: "codex.cmd",
+    codexCmdPath: window.blogAuto?.platform === "win32" ? "codex.cmd" : "codex",
     codexModel: normalizeCodexModel($("#codexModel")?.value),
     primarySearchProvider: searchProviders.primarySearchProvider,
     fallbackSearchProvider: searchProviders.fallbackSearchProvider,

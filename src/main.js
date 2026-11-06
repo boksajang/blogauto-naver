@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, shell, dialog } = require("electron");
 const path = require("node:path");
 const fs = require("node:fs");
+const os = require("node:os");
 const crypto = require("node:crypto");
 const zlib = require("node:zlib");
 const { pathToFileURL } = require("node:url");
@@ -24,10 +25,6 @@ let mainWindow;
 let activeJob = null;
 const activeNaverSessions = new Map();
 const activeTistorySessions = new Map();
-
-app.disableHardwareAcceleration();
-app.commandLine.appendSwitch("disable-gpu");
-app.commandLine.appendSwitch("disable-software-rasterizer");
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -57,6 +54,10 @@ function getRuntimeRoot() {
   }
 
   if (app.isPackaged) {
+    if (process.platform === "darwin") {
+      return path.join(app.getPath("userData"), "runtime");
+    }
+
     const portableDir = process.env.PORTABLE_EXECUTABLE_DIR;
     if (portableDir && fs.existsSync(portableDir)) {
       return path.join(portableDir, "runtime");
@@ -233,12 +234,20 @@ function buildTistoryTestArticle() {
 }
 
 function detectChromeInstall() {
-  const candidates = [
-    process.env.PROGRAMFILES && path.join(process.env.PROGRAMFILES, "Google", "Chrome", "Application", "chrome.exe"),
-    process.env["PROGRAMFILES(X86)"] && path.join(process.env["PROGRAMFILES(X86)"], "Google", "Chrome", "Application", "chrome.exe"),
-    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe")
-  ].filter(Boolean);
-  const chromePath = candidates.find((candidate) => fs.existsSync(candidate));
+  const candidates = [];
+  if (process.platform === "darwin") {
+    candidates.push(
+      "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+      path.join(os.homedir(), "Applications", "Google Chrome.app", "Contents", "MacOS", "Google Chrome")
+    );
+  } else if (process.platform === "win32") {
+    candidates.push(
+      process.env.PROGRAMFILES && path.join(process.env.PROGRAMFILES, "Google", "Chrome", "Application", "chrome.exe"),
+      process.env["PROGRAMFILES(X86)"] && path.join(process.env["PROGRAMFILES(X86)"], "Google", "Chrome", "Application", "chrome.exe"),
+      process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, "Google", "Chrome", "Application", "chrome.exe")
+    );
+  }
+  const chromePath = candidates.filter(Boolean).find((candidate) => fs.existsSync(candidate));
   return {
     available: Boolean(chromePath),
     path: chromePath || ""

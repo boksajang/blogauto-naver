@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("blogAuto", {
+  platform: process.platform,
   getInitialData: () => ipcRenderer.invoke("app:getInitialData"),
   openChromeInstallAndQuit: () => ipcRenderer.invoke("chrome:installAndQuit"),
   refreshCodexUsage: () => ipcRenderer.invoke("codex:refreshUsage"),

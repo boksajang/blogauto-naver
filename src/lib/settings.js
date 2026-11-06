@@ -22,7 +22,7 @@ const DEFAULT_SETTINGS = {
   topic: "",
   keyword: "",
   category: "",
-  codexCmdPath: "codex.cmd",
+  codexCmdPath: process.platform === "win32" ? "codex.cmd" : "codex",
   codexModel: "",
   primarySearchProvider: "naver",
   fallbackSearchProvider: "google",
@@ -97,40 +97,57 @@ function isDefaultCodexCmdPath(value) {
   return !normalized || normalized === "codex" || normalized === "codex.cmd" || normalized === "codex.exe";
 }
 
-function findDesktopCodexExecutable() {
-  const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
-  const codexBinRoot = path.join(localAppData, "OpenAI", "Codex", "bin");
-  if (!fs.existsSync(codexBinRoot)) return "";
+function findExecutableInPath(name) {
+  const pathValue = String(process.env.PATH || "");
+  for (const directory of pathValue.split(path.delimiter)) {
+    if (!directory) continue;
+    const candidate = path.join(directory, name);
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return "";
+}
 
-  const candidates = [];
-  try {
-    for (const entry of fs.readdirSync(codexBinRoot, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
-      const candidate = path.join(codexBinRoot, entry.name, "codex.exe");
-      if (fs.existsSync(candidate)) candidates.push(candidate);
+function findDesktopCodexExecutable() {
+  if (process.platform === "win32") {
+    const localAppData = process.env.LOCALAPPDATA || path.join(os.homedir(), "AppData", "Local");
+    const codexBinRoot = path.join(localAppData, "OpenAI", "Codex", "bin");
+    if (!fs.existsSync(codexBinRoot)) return "";
+
+    const candidates = [];
+    try {
+      for (const entry of fs.readdirSync(codexBinRoot, { withFileTypes: true })) {
+        if (!entry.isDirectory()) continue;
+        const candidate = path.join(codexBinRoot, entry.name, "codex.exe");
+        if (fs.existsSync(candidate)) candidates.push(candidate);
+      }
+    } catch {
+      return "";
     }
-  } catch {
-    return "";
+
+    const rootCandidate = path.join(codexBinRoot, "codex.exe");
+    if (fs.existsSync(rootCandidate)) candidates.push(rootCandidate);
+
+    return candidates
+      .map((candidate) => {
+        try {
+          return { candidate, mtimeMs: fs.statSync(candidate).mtimeMs };
+        } catch {
+          return { candidate, mtimeMs: 0 };
+        }
+      })
+      .sort((a, b) => b.mtimeMs - a.mtimeMs)[0]?.candidate || "";
   }
 
-  const rootCandidate = path.join(codexBinRoot, "codex.exe");
-  if (fs.existsSync(rootCandidate)) candidates.push(rootCandidate);
-
-  return candidates
-    .map((candidate) => {
-      try {
-        return { candidate, mtimeMs: fs.statSync(candidate).mtimeMs };
-      } catch {
-        return { candidate, mtimeMs: 0 };
-      }
-    })
-    .sort((a, b) => b.mtimeMs - a.mtimeMs)[0]?.candidate || "";
+  return findExecutableInPath("codex")
+    || findExecutableInPath("codex.cmd")
+    || findExecutableInPath("codex.exe")
+    || (fs.existsSync(path.join(os.homedir(), ".codex", "bin", "codex")) ? path.join(os.homedir(), ".codex", "bin", "codex") : "");
 }
 
 function resolveCodexCmdPath(value) {
   const raw = String(value || "").trim();
   if (!isDefaultCodexCmdPath(raw)) return raw;
-  return findDesktopCodexExecutable() || raw || DEFAULT_SETTINGS.codexCmdPath;
+  return findDesktopCodexExecutable() || (process.platform === "win32" ? "codex.cmd" : "codex") || raw || DEFAULT_SETTINGS.codexCmdPath;
 }
 
 function normalizeCodexModel(value) {

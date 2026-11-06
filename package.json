@@ -7,10 +7,13 @@
     "start": "electron .",
     "start:runtime": "set BLOGAUTO_RUNTIME_ROOT=%CD%\\dist\\runtime&& electron .",
     "start:runtime:autorun": "set BLOGAUTO_RUNTIME_ROOT=%CD%\\dist\\runtime&& set BLOGAUTO_AUTOSTART=1&& electron .",
+    "start:runtime:mac": "BLOGAUTO_RUNTIME_ROOT=dist/runtime electron .",
+    "start:runtime:autorun:mac": "BLOGAUTO_RUNTIME_ROOT=dist/runtime BLOGAUTO_AUTOSTART=1 electron .",
     "run:saved": "node scripts/run-saved-job.js",
     "publish:latest": "node scripts/publish-latest-job.js",
     "check": "node scripts/check.js",
-    "dist": "electron-builder --win portable && node scripts/prepare-dist-runtime.js"
+    "dist": "electron-builder --win portable && node scripts/prepare-dist-runtime.js",
+    "dist:mac": "electron-builder --mac zip && node scripts/prepare-dist-runtime.js && node scripts/sign-mac-dist.js"
   },
   "build": {
     "appId": "com.local.blogauto.naver",
@@ -33,6 +36,13 @@
         "portable"
       ],
       "artifactName": "Naver-Blog-Automator-${version}.${ext}"
+    },
+    "mac": {
+      "target": [
+        "zip"
+      ],
+      "artifactName": "Naver-Blog-Automator-mac-${version}.${ext}",
+      "category": "public.app-category.productivity"
     }
   },
   "dependencies": {
@@ -41,5 +51,8 @@
   "devDependencies": {
     "electron": "^31.0.0",
     "electron-builder": "^24.13.3"
+  },
+  "allowScripts": {
+    "electron@31.7.7": true
   }
 }

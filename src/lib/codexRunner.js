@@ -2326,7 +2326,7 @@ async function runCodexTask({
 }
 
 async function fetchCodexUsageSnapshot({
-  codexCmdPath = "codex.cmd",
+  codexCmdPath = process.platform === "win32" ? "codex.cmd" : "codex",
   cwd = process.cwd(),
   timeoutMs = 30000
 } = {}) {

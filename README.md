@@ -5,7 +5,7 @@
 >
 > 계정 보호를 위해 프로그램이 Naver 아이디와 비밀번호를 자동으로 입력하거나 로그인 버튼을 누르지 않습니다. 이에 따라 계정 관리 화면의 **Naver ID 및 Password 입력 항목도 제거되었습니다.** 계정에는 블로그 주소의 `Blog ID`만 등록하고, 세션 확인 또는 발행 중 로그인·캡챠 화면이 열리면 사용자가 해당 Chrome 창에서 아이디와 비밀번호를 직접 입력해 로그인해야 합니다. 로그인 완료 후에는 전용 Chrome 프로필에 저장된 세션을 재사용합니다.
 
-Codex 기반 Windows 데스크톱 자동화 콘솔입니다. Naver Blog 글 생성/발행을 기본 흐름으로 사용하고, Naver 발행이 성공하면 같은 제목, 본문, 이미지, 카테고리, 태그를 Tistory 블로그에도 이어서 발행할 수 있습니다.
+Codex 기반 데스크톱 자동화 콘솔입니다. Windows와 macOS에서 실행할 수 있으며, Naver Blog 글 생성/발행을 기본 흐름으로 사용하고, Naver 발행이 성공하면 같은 제목, 본문, 이미지, 카테고리, 태그를 Tistory 블로그에도 이어서 발행할 수 있습니다.
 
 ## 주요 기능
 
@@ -45,6 +45,12 @@ npm install
 npm start
 ```
 
+macOS에서 `dist/runtime`에 데이터를 저장하려면:
+
+```bash
+npm run start:runtime:mac
+```
+
 검사:
 
 ```bash
@@ -54,8 +60,14 @@ npm run check
 빌드:
 
 ```bash
+# Windows
 npm run dist
+
+# macOS
+npm run dist:mac
 ```
+
+macOS 빌드는 `dist/mac-arm64/Naver Blog Automator.app`을 만들고 ad-hoc 서명을 붙입니다. Apple 개발자 인증서가 없어도 실행되지만, 처음 열 때 Gatekeeper가 차단할 수 있습니다. 그러면 **마우스 오른쪽 버튼으로 열기** 또는 **시스템 설정 > 개인정보 보호 및 보안**에서 허용한 뒤 다시 열어 주세요. 패키징된 앱은 번들 내부가 아니라 `~/Library/Application Support/blogauto-naver-tistory/runtime`에 데이터를 씁니다.
 
 저장된 작업 실행:
 
